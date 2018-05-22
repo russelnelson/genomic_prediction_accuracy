@@ -301,7 +301,7 @@ pgs <- function(x, n_runs, effect.sizes, h, gens, growth.function, survival.func
   library(doParallel)
   
   if(par == "avail"){
-    par <- detectCores(par)
+    par <- parallel::detectCores(all.tests = TRUE)
   }
   
   cl <- snow::makeSOCKcluster(par)

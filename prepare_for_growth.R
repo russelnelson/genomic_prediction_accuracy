@@ -118,7 +118,7 @@ rec.dist <- 1/2^(0:floor(log(1000,2)))
 x <- data.table::as.data.table(x)
 
 #=============run and save========
-out <- pgs(x, n_runs = n_runs, meta$effect, h, max_gens, l_g_func, s_norm_func, sopt_sp_func, rec.dist, meta = meta)
+out <- pgs(x, n_runs = n_runs, meta$effect, h, max_gens, l_g_func, s_norm_func, sopt_sp_func, rec.dist, meta = meta, par = 30)
 
 saveRDS(out, outname)
 
