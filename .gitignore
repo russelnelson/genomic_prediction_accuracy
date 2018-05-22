@@ -1,21 +1,10 @@
-# History files
-.Rhistory
-.Rapp.history
-
-# Session Data files
+./ms_runs/theta4k_1000_10_rho40k.txt
+./ms_runs/theta4k_1000_10_rho8k.txt
+./ms_runs/theta4k_1000_10.txt
 .RData
-
-# Example code in package build process
-*-Ex.R
-
-# Output files from R CMD build
-/*.tar.gz
-
-# Output files from R CMD check
-/*.Rcheck/
-
-# RStudio files
+.Rhistory
 .Rproj.user/
+<<<<<<< HEAD
 
 # produced vignettes
 vignettes/*.html
@@ -35,3 +24,5 @@ vignettes/*.pdf
 # Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
 rsconnect/
 .Rproj.user
+=======
+>>>>>>> 3b459155d5a78f98e9030e98326b3246a433526d
