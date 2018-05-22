@@ -1,7 +1,7 @@
 #=======function to do growth and selection=======
 gs <- function(x, effect.sizes, h, gens, growth.function, survival.function, 
                selection.shift.function, rec.dist,
-               meta = NULL, plot_during_progress = FALSE, facet = "group", chr.length = 10000000){
+               meta, plot_during_progress = FALSE, facet = "group", chr.length = 10000000){
   cat("Converting x to a data.table...\n")
   x <- data.table::as.data.table(x)
   
@@ -66,14 +66,14 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
   
   
   #make output matrix and get initial conditions
-  out <- matrix(NA, nrow = gens + 1, ncol = 5)
-  colnames(out) <- c("N", "mu_pheno", "mu_a", "opt", "diff")
+  out <- matrix(NA, nrow = gens + 1, ncol = 6)
+  colnames(out) <- c("N", "mu_pheno", "mu_a", "opt", "diff", "var_a")
   N <- ncol(x)/2 #initial pop size
   h.av <- var(a) #get the historic addative genetic variance.
   h.pv <- var(pheno) #historic phenotypic variance.
   opt <- mean(a) #starting optimal phenotype
   
-  out[1,] <- c(N, mean(pheno), mean(a), opt, 0) #add this and the mean initial additive genetic variance
+  out[1,] <- c(N, mean(pheno), mean(a), opt, 0, h.av) #add this and the mean initial additive genetic variance
   
   if(plot_during_progress){
     pdat <- melt(out)
@@ -103,9 +103,7 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     
     #if the population has died out, stop.
     if(sum(s) <= 1){
-      out[i,1] <- 0
-      out[i,2:4] <- rep(NA, 3)
-      return(out[1:i,])
+      return(out[1:(i-1),])
     }
     
     #what is the pop size after growth?
@@ -271,6 +269,7 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     out[i,3] <- mean(a)
     out[i,4] <- opt
     out[i,5] <- opt - mean(a)
+    out[i,6] <- var(a)
     cat("gen:", i-1, "\topt_s:", out[i-1,4], "\tend mean a:", out[i,3], "\tnum_surv:", sum(s), "\tpop size:", out[i,1],"\n")
     
     if(plot_during_progress){
@@ -292,4 +291,47 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
   }
   
   return(out)
+}
+
+
+#=======function to run gs in parallel and grab results======
+pgs <- function(x, n_runs, effect.sizes, h, gens, growth.function, survival.function, 
+                selection.shift.function, rec.dist,
+                meta, facet = "group", chr.length = 10000000, par = "avail"){
+  library(doParallel)
+  
+  if(par == "avail"){
+    par <- detectCores(par)
+  }
+  
+  cl <- snow::makeSOCKcluster(par)
+  doSNOW::registerDoSNOW(cl)
+  
+  ntasks <- n_runs
+  progress <- function(n) cat(sprintf("Part %d out of",n), ntasks, "is complete.\n")
+  opts <- list(progress=progress)
+  
+  output <- foreach::foreach(q = 1:ntasks, .inorder = FALSE,
+                             .options.snow = opts, .export = "gs") %dopar% {
+                               w_data <- gs(x, effect.sizes, h, gens, growth.function, survival.function, 
+                                            selection.shift.function, rec.dist,
+                                            meta, plot_during_progress = FALSE, facet, chr.length)
+                             }
+  
+  parallel::stopCluster(cl)
+  doSNOW::registerDoSNOW()
+  
+  res <- data.frame(gens_persisted = unlist(lapply(output, nrow)),
+                    ending_a = unlist(lapply(output, function(x) x[nrow(x), 3])),
+                    ending_optimum_a = unlist(lapply(output, function(x) x[nrow(x), 4])),
+                    delta_a = unlist(lapply(output, function(x) abs(x[1,3] - x[nrow(x),3]))),
+                    a_delta_rate = unlist(lapply(output, function(x) lm(mu_a ~ gen, cbind(gen = 1:nrow(x), as.data.frame(x)))$coefficients[2])),
+                    end_var_a = unlist(lapply(output, function(x) x[nrow(x), 6])),
+                    var_a_delta_rate = unlist(lapply(output, function(x) lm(var_a ~ gen, cbind(gen = 1:nrow(x), as.data.frame(x)))$coefficients[2])))
+  
+  names(output) <- paste0("run_", 1:length(output))
+  output <- list(summary = res, results = output)
+  
+  return(output)
+  
 }

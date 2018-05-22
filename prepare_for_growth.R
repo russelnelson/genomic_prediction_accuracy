@@ -1,6 +1,10 @@
 #=========import and prepare data=========
 x <- "theta4k_1000_10_rho40k.txt"
+outname <- "trial_300_runs.RDS"
 chrl <- 10000000
+max_gens <- 150
+n_runs <- 300
+h <- 1
 
 process_ms <- function(x, chr.length){
   infile <- x #infile
@@ -87,7 +91,7 @@ s_norm_func <- function(x, opt_pheno, hist_var = h.av){
 }
 
 #increases the selection optimum by a percentage each gen
-sopt_sp_func <- function(x, iv, slide = 0.05){
+sopt_sp_func <- function(x, iv, slide = 0.3){
   x <- x + iv*slide
 }
 
@@ -109,13 +113,8 @@ rec.dist <- 1/2^(0:floor(log(1000,2)))
 # xf <- data.table::as.data.table(xf)
 x <- data.table::as.data.table(x)
 
-out <- gs(x, meta$effect, 1, 30, l_g_func, s_norm_func, sopt_sp_func, rec.dist, meta = meta, plot_during_progress = F)
+#=============run and save========
+out <- pgs(x, n_runs = n_runs, meta$effect, h, max_gens, l_g_func, s_norm_func, sopt_sp_func, rec.dist, meta = meta)
 
+saveRDS(out, outname)
 
-
-N <- numeric(20)
-N[1] <- -53.1794
-for(i in 1:(length(N)-1)){
-  N[i+1]<- sopt_stl_func(N[i], -53.1794*1.5, 1)
-}
-plot(N)
