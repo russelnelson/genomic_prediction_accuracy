@@ -6,6 +6,10 @@ max_gens <- 150
 n_runs <- 300
 h <- 1
 
+
+source("growth_sim.R")
+library(doParallel)
+
 process_ms <- function(x, chr.length){
   infile <- x #infile
   lines <- readLines(x)
