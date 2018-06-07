@@ -2,8 +2,7 @@
 gs <- function(x, effect.sizes, h, gens, growth.function, survival.function, 
                selection.shift.function, rec.dist,
                meta, plot_during_progress = FALSE, facet = "group", chr.length = 10000000){
-  cat("Converting x to a data.table...\n")
-  x <- data.table::as.data.table(x)
+  cat("Initializing...\n")
   
   
   #========faster colSums funciton"
@@ -304,7 +303,7 @@ pgs <- function(x, n_runs, effect.sizes, h, gens, growth.function, survival.func
     par <- parallel::detectCores(all.tests = TRUE)
   }
   
-  cl <- snow::makeSOCKcluster(par)
+  cl <- snow::makeSOCKcluster(par, outfile="")
   doSNOW::registerDoSNOW(cl)
   
   ntasks <- n_runs

@@ -1,14 +1,23 @@
 #=========import and prepare data=========
-x <- "theta4k_1000_10_rho40k.txt"
-outname <- "trial_300_runs.RDS"
+args <- commandArgs(TRUE)
+
+x <- as.character(args[1])
+outname <- as.character(args[2])
+run_n <- as.character(args[3])
+
+# x <- "theta4k_1000_10_rho40k.txt"
+# outname <- "trial_300_runs.RDS"
 chrl <- 10000000
 max_gens <- 150
 n_runs <- 300
 h <- 1
 
+#on the cluster, run this:
+.libPaths(c(.libPaths(), "/home/hemstrow/R/x86_64-pc-linux-gnu-library/3.4", "/usr/local/lib/R/site-library", "/usr/lib/R/site-library", "/usr/lib/R/library", "/share/apps/rmodules"))
+library(methods)
 
 source("growth_sim.R")
-library(doParallel)
+
 
 process_ms <- function(x, chr.length){
   infile <- x #infile
@@ -118,7 +127,7 @@ rec.dist <- 1/2^(0:floor(log(1000,2)))
 x <- data.table::as.data.table(x)
 
 #=============run and save========
-out <- pgs(x, n_runs = n_runs, meta$effect, h, max_gens, l_g_func, s_norm_func, sopt_sp_func, rec.dist, meta = meta, par = 30)
+out <- gs(x, meta$effect, h, max_gens, l_g_func, s_norm_func, sopt_sp_func, rec.dist, meta = meta)
 
-saveRDS(out, outname)
+write.table(cbind(out, run = rep(run_n, nrow(out))), outname, row.names = F, col.names = T, quote = F)
 
