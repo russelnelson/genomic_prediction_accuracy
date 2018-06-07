@@ -9,7 +9,7 @@ run_n <- as.character(args[3])
 # outname <- "trial_300_runs.RDS"
 chrl <- 10000000
 max_gens <- 150
-n_runs <- 300
+n_runs <- 3
 h <- 1
 
 #on the cluster, run this:
@@ -99,7 +99,7 @@ l_g_func <- function(x, K = 500, r = 2){
 #surivival probability follows a normal distribution around the optimal phenotype.
 s_norm_func <- function(x, opt_pheno, hist_var = h.av){
   x <- dnorm(x, opt_pheno, sqrt(hist_var)*2) #normal dist, sd is equal to ancestral times 2.
-  ((.75-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .5
+  ((.5-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .5
   #(x-min(x))/(max(x)-min(x)) #scaled.
 }
 
@@ -127,7 +127,8 @@ rec.dist <- 1/2^(0:floor(log(1000,2)))
 x <- data.table::as.data.table(x)
 
 #=============run and save========
-out <- gs(x, meta$effect, h, max_gens, l_g_func, s_norm_func, sopt_sp_func, rec.dist, meta = meta)
+
+out <- gs(x, meta$effect, h, max_gens, l_g_func, s_norm_func, sopt_sp_func, rec.dist, meta = meta, plot_during_progress = F)
 
 write.table(cbind(out, run = rep(run_n, nrow(out))), outname, row.names = F, col.names = T, quote = F)
 

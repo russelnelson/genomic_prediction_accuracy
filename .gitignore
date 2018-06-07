@@ -1,28 +1,8 @@
+./LD.out.r40k.chr1.RDS
+./LD.out.ss.10k.RDS
+./LD.out.ss.chr1.RDS
+./ms_runs/theta4k_1000_10.txt
 ./ms_runs/theta4k_1000_10_rho40k.txt
 ./ms_runs/theta4k_1000_10_rho8k.txt
-./ms_runs/theta4k_1000_10.txt
-.RData
-.Rhistory
-.Rproj.user/
-<<<<<<< HEAD
-
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
-
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
-
-# knitr and R markdown default cache directories
-/*_cache/
-/cache/
-
-# Temporary files created by R markdown
-*.utf8.md
-*.knit.md
-
-# Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
-rsconnect/
-.Rproj.user
-=======
->>>>>>> 3b459155d5a78f98e9030e98326b3246a433526d
+./theta4k_1000_10_rho40k.txt
+./theta4k_1000_10_rho8k.txt
