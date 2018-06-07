@@ -76,7 +76,8 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
   out[1,] <- c(N, mean(pheno), mean(a), opt, 0, h.av) #add this and the mean initial additive genetic variance
   
   if(plot_during_progress){
-    pdat <- melt(out)
+    library(ggplot2)
+    pdat <- reshape2::melt(out)
     colnames(pdat) <- c("Generation", "var", "val")
     ranges <- data.frame(var = c("N", "mu_pheno", "mu_a", "opt", "diff"), 
                          ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
@@ -273,7 +274,7 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     cat("gen:", i-1, "\topt_s:", out[i-1,4], "\tend mean a:", out[i,3], "\tnum_surv:", sum(s), "\tpop size:", out[i,1],"\n")
     
     if(plot_during_progress){
-      pdat <- melt(out)
+      pdat <- reshape2::melt(out)
       colnames(pdat) <- c("Generation", "var", "val")
       ranges <- data.frame(var = c("N", "mu_pheno", "mu_a", "opt", "diff"), 
                            ymin = c(0, out[1,2]*2, out[1,3]*2, out[1,4]*2, -10),
