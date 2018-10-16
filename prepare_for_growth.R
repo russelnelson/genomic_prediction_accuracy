@@ -132,3 +132,64 @@ out <- gs(x, meta$effect, h, max_gens, l_g_func, s_norm_func, sopt_sp_func, rec.
 
 write.table(cbind(out, run = rep(run_n, nrow(out))), outname, row.names = F, col.names = T, quote = F)
 
+
+
+#===========stuff for example=======
+
+# src <- '
+#   Rcpp::NumericMatrix dataR(data);
+# Rcpp::NumericVector weightsR(weights);
+# int ncol = dataR.ncol();
+# Rcpp::NumericVector sumR(ncol);
+# for (int col = 0; col<ncol; col++){
+# sumR[col] = Rcpp::sum(dataR( _, col)*weightsR);
+# }
+# return Rcpp::wrap(sumR);'
+# weighted.colSums <- inline::cxxfunction(
+#   signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
+# get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen"){
+#   
+#   #function to add an enivronmental effect.
+#   e.dist.func <- function(A1, hist.a.var, h){
+#     esd <- sqrt(h*hist.a.var)
+#     env.vals <- rnorm(length(A1), 0, esd)
+#   }
+#   
+#   
+#   
+#   
+#   #get effect of each individual:
+#   a <- weighted.colSums(as.matrix(x), effect.sizes)
+#   
+#   a.ind <- a[seq(1, length(a), by = 2)] + a[seq(2, length(a), by = 2)] #add across both gene copies.
+#   
+#   #add environmental variance
+#   if(hist.a.var == "fgen"){
+#     pheno <- a.ind + e.dist.func(a.ind, var(a.ind), h)
+#     return(list(p = pheno, a = a.ind))
+#   }
+#   else{
+#     pheno <- a.ind + e.dist.func(a.ind, hist.a.var, h)
+#     return(list(pheno = pheno, a = a.ind))
+#   }
+# }
+# 
+# 
+# 
+# 
+# ind.effects <- get.pheno.vals(x, meta$effect, 1)
+# 
+# write.table(meta, "example_meta.txt", quote = F, col.names = T, row.names = F)
+# ind.effects <- cbind(samp = as.character(1:500), phenotypes = ind.effects$p)
+# write.table(ind.effects, "example_individual_effects.txt", quote = F, col.names = T, row.names = F)
+# 
+# ind.genos <- paste0(x[,seq(1,ncol(x), by = 2)], x[,seq(2,ncol(x), by = 2)])
+# ind.genos <- matrix(ind.genos, ncol = 500)
+# ind.genos <- gsub("00", "0", ind.genos)
+# ind.genos <- gsub("01", "1", ind.genos)
+# ind.genos <- gsub("10", "1", ind.genos)
+# ind.genos <- gsub("11", "2", ind.genos)
+# 
+# ind.genos <- t(ind.genos)
+# ind.genos <- cbind(samp = 1:500, ind.genos)
+# write.table(ind.genos, "example_ind_genotypes.txt", quote = F, col.names = T, row.names = F)
