@@ -22,7 +22,7 @@ println(G)
 outputMCMCsamples(model1,"phenotype")
 outputMCMCsamples(model1,"genetic_variance")
 #out1=runMCMC(model1,phenotypes,methods="GBLUP",chain_length=chain,printout_frequency=10000,output_samples_frequency=50,burnin=brn);
-out1=runMCMC(model1,phenotypes,methods="RR-BLUP",chain_length=chain,burnin=brn,printout_frequency=10000,output_samples_frequency=50);
+out1=runMCMC(model1,phenotypes,methods=ARGS[5],chain_length=chain,burnin=brn,printout_frequency=10000,output_samples_frequency=50);
 #out1=runMCMC(model1,phenotypes,methods="BayesC",estimatePi=true,chain_length=chain,printout_frequency=10000,burnin=brn);
 
 # get h and write results
@@ -36,4 +36,3 @@ h=JWAS.misc.get_heritability(res_gv, res_rv)
 
 writedlm("est_effects.txt", out1["Posterior mean of marker effects"])
 writedlm("h.txt",mean(h))
-

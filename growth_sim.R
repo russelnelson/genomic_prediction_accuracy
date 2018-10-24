@@ -8,8 +8,7 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
     return(env.vals)
   }
   
-  
-  
+
   
   #get effect of each individual:
   a <- weighted.colSums(as.matrix(x), effect.sizes)
@@ -25,7 +24,7 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
   #add environmental variance
   if(hist.a.var == "fgen"){
     pheno <- a.ind + e.dist.func(a.ind, var(a.ind), h)
-    return(list(p = pheno, a = a.ind))
+    return(list(pheno = pheno, a = a.ind))
   }
   else{
     pheno <- a.ind + e.dist.func(a.ind, hist.a.var, h)
@@ -51,10 +50,22 @@ weighted.colSums <- inline::cxxfunction(
 #=======function to do growth and selection=======
 gs <- function(x, effect.sizes, h, gens, growth.function, survival.function, 
                selection.shift.function, rec.dist,
-               meta, plot_during_progress = FALSE, facet = "group", chr.length = 10000000, fgen.pheno = FALSE,
-               print.all.freqs = FALSE){
+               meta, plot_during_progress = FALSE, 
+               facet = "group", chr.length = 10000000, fgen.pheno = FALSE,
+               intercept_adjust = FALSE,
+               print.all.freqs = FALSE,
+               adjust_phenotypes = FALSE,
+               do.sexes = TRUE){
+
   cat("Initializing...\n")
-  #before doing anything else, go ahead and remove any loci from those provided with no effect! Faster this way.
+  
+  #=================checks========
+  if(nrow(x) != length(effect.sizes) | nrow(x) != nrow(meta)){
+    stop("Provided x, effect sizes, and meta must all be of equal length!")
+  }
+  
+  #================
+  # before doing anything else, go ahead and remove any loci from those provided with no effect! Faster this way.
   if(any(effect.sizes == 0)){
     n.eff <- which(effect.sizes == 0)
     x <- x[-n.eff,]
@@ -70,23 +81,34 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     pheno <- get.pheno.vals(x, effect.sizes, h)
   
     a <- pheno$a #addative genetic values
-    pheno <- pheno$p #phenotypic values
+    pheno <- pheno$pheno #phenotypic values
   }
   else{
     cat("Using provided phenotypic values.")
     pheno <- fgen.pheno #provded phenotypic values.
     a <- get.pheno.vals(x, effect.sizes, h)$a # genetic values from data
+    
+    #get the adjustment factor to use based on provided vs. predicted phenotypes.
+    #to do this, calculate adjust_phenotypes phenotypic variances created by sampling enivironmental effects.
+    #then, divide the observed phenotypic var by the mean of these.
+    #to adjust, multiply future phenotypes by the square root of these values, then adjust the mean back to the correct mean.
+    if(adjust_phenotypes != FALSE){
+      ad.factor <- var(a)/h # expected phenotypic variance given the allelic variance.
+      pred.hist.p.var <- ad.factor # save this for later
+      ad.factor <- var(pheno)/ad.factor # how much do we need to adjust?
+    }
+    
+    #if requested, get the amount to adjust phenotypes by in future gens.
+    if(intercept_adjust){
+      i.adj <- mean(pheno)
+    }
   }
   
-  #starting optimal phenotype, which is the average effect size weighted by starting allele frequency.
-  # safreq <- rowSums(x)/ncol(x) #allele frequencies
-  # opt <- mean(safreq*effect.sizes) #optimum phenotype
-  
-  #starting optimal phenotype, which is the starting mean genetic value.
-  opt <- mean(a) #optimum phenotype
+  #starting optimal phenotype, which is the starting mean phenotypic value.
+  opt <- mean(pheno) #optimum phenotype
   
   cat("\n\n===============done===============\n\nStarting parms:\n\tstarting optimum phenotype:", opt, 
-      "\n\tmean phenotypic value:", mean(pheno), "\n\taddative genetic variance:", var(a), "\n\tphenotypic variance:", var(pheno), "\n\th:", h)
+      "\n\tmean phenotypic value:", mean(pheno), "\n\taddative genetic variance:", var(a), "\n\tphenotypic variance:", var(pheno), "\n\th:", h, "\n")
   
   #make output matrix and get initial conditions
   out <- matrix(NA, nrow = gens + 1, ncol = 6)
@@ -119,17 +141,15 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     a.fqs[,1] <- rowSums(x)/ncol(x)
   }
   
-  
   #===========loop through each additional gen, doing selection, survival, and fisher sampling of survivors====
   
   cat("\nBeginning run...\n\n================================\n\n")
-  
+
   for(i in 2:(gens+1)){
     #=========survival====
     #survival:
     s <- rbinom(out[(i-1),1], 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
-                survival.function(c(pheno, opt), opt, hist_var = h.pv)[-(length(pheno) + 1)]) # calling the function in this way ensures that individuals with phenotypes at the optimum have a survival probability of 0.50.
-    
+                survival.function(c(pheno, opt), opt, hist_var = h.pv)[-(length(pheno) + 1)]) # calling the function in this way ensures that individuals with phenotypes at the optimum have a survival probability of whatever is set in the function.
     #if the population has died out, stop.
     if(sum(s) <= 1){
       if(print.all.freqs){
@@ -148,16 +168,43 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     #make a new x with the survivors
     x <- x[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
     
+    # # check phenotypic variance...
+    temp <- get.pheno.vals(x, effect.sizes, h, hist.a.var = h.av)
+    # ptemp <- data.frame(val = c(a, temp$a), class = c(rep("T0", length(a)), rep("T1", length(temp$a))))
+    # temp <- temp$pheno
+    # if(intercept_adjust){
+    #   temp <- temp + i.adj
+    # }
+    # # adjust variance
+    # if(adjust_phenotypes != FALSE){
+    #   s.p.mean <- mean(temp)
+    #   temp <- temp*sqrt(ad.factor)
+    #   temp <- temp - (mean(temp) - s.p.mean)
+    # }
+    # print(var(temp))
+
+    
+    
     #=========get parents and assign gcs for the next gen====
     #make a new x with individuals in next gen
     ##find parents
-    mates <- matrix(sample(ncol(x)/2, out[i,1]*2, T), ncol = 2) #p1 and p2 are columns
-    selfings <- which(mates[,1] == mates[,2]) #any selfing?
-    while(length(selfings) > 0){ #correct selfing
-      mates[selfings,] <- sample(ncol(x)/2, length(selfings)*2, T) #get new parents
-      selfings <- which(mates[,1] == mates[,2]) #any selfing remaining?
+    if(do.sexes){ # if there are two sexes
+      sex <- rbinom(ncol(x)/2, 1, 0.5) #what are the parent sexes?
+      mates <- matrix(0, nrow = out[i,1], ncol = 2) # initialize, p1 and p2 are columns
+      mates[,1] <- which(sex == 1)[sample(sum(sex), nrow(mates), T)] #get parents of sex a
+      mates[,2] <- which(sex == 0)[sample(length(sex) - sum(sex), nrow(mates), T)] #get parents of sex b
+    }
+    else{ # if there is only one sex
+      mates <- matrix(sample(ncol(x)/2, out[i,1]*2, T), ncol = 2) #p1 and p2 are columns
+      selfings <- which(mates[,1] == mates[,2]) #any selfing?
+      while(length(selfings) > 0){ #correct selfing
+        mates[selfings,] <- sample(ncol(x)/2, length(selfings)*2, T) #get new parents
+        selfings <- which(mates[,1] == mates[,2]) #any selfing remaining?
+      }
     }
     
+    # table with the showing the distribution of the number of offspring for each adult:
+    # table(c(table(mates), rep(0, (ncol(x)/2) - length(table(mates)))))
     x.next <- data.table::as.data.table(matrix(0, nrow(x), nrow(mates)*2)) #initialize x matrix for next gen
     
     #=========figure out which copy from each parent goes to offspring=====
@@ -291,11 +338,24 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     
     #=============adjust selection, get new phenotype scores, get ready for next gen====
     x <- x.next
-    
+    plot(effect.sizes*(rowSums(x)/ncol(x)))
     #get phenotypic/genetic values
     pheno <- get.pheno.vals(x, effect.sizes, h, hist.a.var = h.av)
     a <- pheno$a #addative genetic values
-    pheno <- pheno$p #phenotypic values
+    pheno <- pheno$pheno #phenotypic values
+    
+    
+    #if requested, adjust the phenotypic values.
+    # adjust intercept
+    if(intercept_adjust){
+      pheno <- pheno + i.adj
+    }
+    # adjust variance
+    if(adjust_phenotypes != FALSE){
+      s.p.mean <- mean(pheno)
+      pheno <- pheno*sqrt(ad.factor)
+      pheno <- pheno - (mean(pheno) - s.p.mean)
+    }
     
     #adjust selection optima
     opt <- selection.shift.function(opt, iv = sqrt(h.av))
@@ -307,10 +367,11 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     out[i,5] <- opt - mean(a)
     out[i,6] <- var(a)
     cat("gen:", i-1, "\topt_s:", round(out[i-1,4],3), 
-        "\tend mean phenotype:", round(out[i,2],3),  
-        "\tend mean a:", round(out[i,3],3), 
-        "\tnum_surv:", sum(s), 
-        "\tpop size:", out[i,1],"\n")
+        "\tmean(pheno):", round(out[i,2],3),  
+        "\tmean(a):", round(out[i,3],3),
+        "\tvar(pheno):", round(var(pheno)),
+        "\tNs:", sum(s), 
+        "\tN(t+1):", out[i,1],"\n")
     
     if(plot_during_progress){
       pdat <- reshape2::melt(out)
@@ -446,6 +507,7 @@ pgs <- function(x, n_runs, effect.sizes, h, gens, growth.function, survival.func
 #    pass.var: NULL or numeric >= 0. Like pass.resid, but for the true genetic variance.
 #    standardize: Boolean. Should the addative genetic values be centered and scaled between -1 and 1 prior to entry into JWAS? Phenotypic values still won't be centered!
 pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 100000, burnin = 50000, 
+                 JWAS.model,
                  make.ig = FALSE, sub.ig = FALSE, maf.filt = 0.05, 
                  julia.path = "julia", runID = "r1", qtl_only = FALSE,
                  pass.resid = NULL, pass.var = NULL, standardize = FALSE,
@@ -456,7 +518,7 @@ pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 10000
   #============format data for JWAS==============
   ind.effects <- get.pheno.vals(x, effect.sizes, h = h, standardize = standardize)
   r.ind.effects <- ind.effects
-
+  
   if(!dir.exists(runID)){
     dir.create(runID)
   }
@@ -466,7 +528,7 @@ pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 10000
   #write.table(meta, "meta.txt", quote = F, col.names = T, row.names = F)
   ind.effects <- cbind(samp = as.character(1:500), phenotypes = ind.effects$p)
   write.table(ind.effects, "ie.txt", quote = F, col.names = T, row.names = F)
-
+  
   #make an individual genotype file if it isn't already constructed.
   if(make.ig){
     if(qtl_only){
@@ -479,18 +541,24 @@ pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 10000
     }
     
     else{
-      #subset markers
-      if(sub.ig != FALSE){
-        s.markers <- sort(sample(nrow(x), sub.ig))
-        x <- x[s.markers,]
-        meta <- meta[s.markers,]
-      }
       
       #filter low minor allele frequencies if requested (like many prediction studies will do!)
       if(maf.filt != FALSE){
         m.keep <- matrixStats::rowSums2(x)/ncol(x) >= maf.filt
         x <- x[m.keep,]
         meta <- meta[m.keep,]
+      }
+      
+      #subset markers
+      if(sub.ig != FALSE){
+        if(nrow(x) > sub.ig){
+          s.markers <- sort(sample(nrow(x), sub.ig))
+          x <- x[s.markers,]
+          meta <- meta[s.markers,]
+        }
+        else{
+          warning("Fewer markers than sub.ig. Running all markers.\n")
+        }
       }
       
     }
@@ -528,9 +596,9 @@ pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 10000
   else{
     gv <- 1
   }
-  julia.call <- paste0(julia.call, " ", rv, " ", gv)
+  julia.call <- paste0(julia.call, " ", rv, " ", gv, " ", JWAS.model)
   system(julia.call)
-
+  
   #=========grab output and modify it to give the estimated effect size per locus=============
   e.eff <- read.table("est_effects.txt", header = F, sep = "\t")
   h <- read.table("h.txt")
@@ -546,5 +614,5 @@ pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 10000
   # the mean phenotype for selection will need to be set to 0!
   
   return(list(x = x, e.eff = e.eff, a.eff = r.ind.effects, meta = meta, h = as.numeric(h)))
-
+  
 }

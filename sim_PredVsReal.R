@@ -12,28 +12,30 @@ library(ggplot2)
 # outname <- as.character(args[2])
 # run_n <- as.character(args[3])
 
-runID <- "r01"
-x <- "theta4k_1000_10_rho40k.txt"
-outname <- "trial_300_runs.RDS"
-chrl <- 10000000
-max_gens <- 1000
-n_runs <- 3
-h <- 0.5
-prob.effect <- 0.01
-effect.sd <- 0.5
-effect.mean <- 0
-K <- 500
-r <- 2
-make.ig <- TRUE
-sub.ig <- 1000
-maf <- 0.05
-qtl_only <- TRUE
-chain_length <- 100000 # not working currently
-burnin <- 50000 # not working currently
-pass.resid <- 0
-pass.var <- 0
-standardize <- FALSE
-julia.path <- "/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/julia.exe"
+runID <- "r01" # run ID and directory name where intermediate results will be stored. Will be created if needed.
+x <- "theta4k_1000_10_rho40k.txt" # name of input ms format data
+outname <- "trial_300_runs.RDS" # file name to save output dataset NOT CURRENTLY IMPLEMENTED
+chrl <- 10000000 # chromosome length CURRENTLY THE SAME ACROSS ALL CHRs
+max_gens <- 1000 # maximum number of gens to do selection
+n_runs <- 3 # number of times to run the selection operation NOT CURRENTLY IMPLEMENTED
+h <- 0.5 # h^2, or heritability for the trait prior to any selection.
+prob.effect <- 0.01 # probability that any single SNP has an effect
+effect.sd <- 0.5 # sd of effect sizes
+effect.mean <- 0 # mean of effect sizes
+r <- 2 # growth rate of population NOT CURRENTLY IMPLEMENTED, CHANGE IN MODEL BELOW
+make.ig <- TRUE # should new input files for JWAS be created?
+sub.ig <- FALSE # Numeric or FALSE. Should we randomly subset out some SNPs to run in JWAS?
+maf <- FALSE # Numeric or FALSE. Should we remove SNPs with a low minor allele frequency? If so, how low?
+qtl_only <- TRUE # Should we only put QTLs into JWAS? If TRUE, overrides sub.ig and maf.
+chain_length <- 100000 # How long should the MCMC chain in JWAS be?
+burnin <- 50000 # How many MCMC iterations should we discard at the start of the chain? Must be less than chain_length!
+pass.resid <- 0 # Numeric or NULL. Should we pass residual variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
+pass.var <- 0 # Numeric or NULL. Should we pass genetic variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
+standardize <- FALSE # Should phenotypes be centered and scaled before being passed to JWAS?
+adjust_phenotypes <- TRUE # When doing selection on the prediced effect sizes, do we need to re-adjust phenotypic variance to match the initial variance? Mostly useful since variances predicted by JWAS are less than that in the data provided to it, so the variance needs to be adjusted if you want to use the observed phenotypes for the first round of selection.
+intercept_adjust <- T # For selection on the predicted effect sizes, should we re-adjust phenotypes given an intercept (the mean phenotypic value of the input data)? 
+JWAS.model <- "RR-BLUP" # What JWAS model should we use?
+julia.path <- "/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/julia.exe" # What is the path to julia.exe?
 # path_libjulia <- "C:/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/libjulia.dll"
 # JWASr::jwasr_setup_win(path_libjulia)
 
@@ -45,7 +47,7 @@ effect.dist.func <- function(n){
 }
 
 #logarithmic growth
-l_g_func <- function(x, K = 575, r = 2){
+l_g_func <- function(x, K =575, r = 2){
   return((K*x*exp(r))/(K + x*(exp(r*1) - 1)))
 }
 
@@ -53,7 +55,7 @@ l_g_func <- function(x, K = 575, r = 2){
 
 #surivival probability follows a normal distribution around the optimal phenotype.
 s_norm_scaled_func <- function(x, opt_pheno, hist_var = h.pv, ...){
-  x <- dnorm(x, opt_pheno, sqrt(hist_var)) #normal dist, sd is based on ancestral var
+  x <- dnorm(x, opt_pheno, sqrt(hist_var)*4) #normal dist, sd is based on ancestral var
   ((.7-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .5
   #(x-min(x))/(max(x)-min(x)) #scaled.
 }
@@ -90,6 +92,7 @@ x <- process_ms(x, chrl)
 meta <- x$meta
 x <- x$x
 
+#assign effects
 meta$effect <- rbinom(nrow(meta), 1, prob.effect) #does each site have an effect?
 meta$effect[which(meta$effect == 1)] <- effect.dist.func(sum(meta$effect)) #what are the effect sizes?
 cat("Mean effect size:", mean(meta$effect), "\n")
@@ -100,8 +103,9 @@ pred_vals <- pred(x = x,
                   effect.sizes = meta$effect, 
                   h = h, 
                   chr.length = chrl, 
-                  chain_length = chain_length, 
-                  burnin = burnin, 
+                  chain_length = chain_length,
+                  burnin = burnin,
+                  JWAS.model = JWAS.model,
                   make.ig = make.ig, 
                   sub.ig = sub.ig, 
                   maf.filt = maf, 
@@ -112,6 +116,8 @@ pred_vals <- pred(x = x,
                   pass.var = pass.var,
                   standardize = standardize)
 
+
+# pred_vals <- readRDS("full_data_pred_vals.RDS") 
 # # diagnostic plots
 # ggplot(pred_vals$e.eff, aes(V2)) + geom_histogram()
 # comp <- cbind(pred_vals$e.eff, pred_vals$meta)
@@ -145,9 +151,11 @@ pred_vals <- pred(x = x,
 
 #=========================prepare and run simulations for both the real and predicted effects=============
 # note, using phenotypes created in the pred function as the first gen phenotypes for both runs!
+pred_vals$x <- as.data.table(pred_vals$x)
+x <- as.data.table(x)
 
 #simulation on predicted data. The first generation phenotypes aren't used here, since they are far from what would be predicted.
-pr.gs <- gs(x = as.data.table(pred_vals$x), 
+pr.gs <- gs(x = pred_vals$x, 
             effect.sizes = pred_vals$e.eff[,2], 
             h = pred_vals$h, 
             gens = max_gens,
@@ -158,10 +166,13 @@ pr.gs <- gs(x = as.data.table(pred_vals$x),
             meta = pred_vals$meta, 
             plot_during_progress = F, 
             chr.length = chrl, 
-            print.all.freqs = T)
+            print.all.freqs = F,
+            adjust_phenotypes = adjust_phenotypes,
+            intercept_adjust = intercept_adjust,
+            fgen.pheno = pred_vals$a.eff$p)
 
 #simulation on 'real' data
-re.gs <- gs(x = as.data.table(x), 
+re.gs <- gs(x = x, 
             effect.sizes = meta$effect, 
             h = h, 
             gens = max_gens, 
@@ -172,7 +183,8 @@ re.gs <- gs(x = as.data.table(x),
             meta = meta, 
             plot_during_progress = F, 
             chr.length = chrl, 
-            print.all.freqs = T)
+            print.all.freqs = F,
+            fgen.pheno = pred_vals$a.eff$p)
 
 #========================return the result===============================
 
@@ -220,6 +232,16 @@ ggplot(pdat, aes(x = gen, y = mu_a)) + theme_bw() + geom_line() + facet_wrap(~mo
 # 
 
 
+
+
+
+
+
+
+
+
+
+
 #=================debugging============
 e.dist.func <- function(A1, hist.a.var, h){
   esd <- sqrt((hist.a.var/h)-hist.a.var) # re-arrangement of var(pheno) = var(G) + var(E) and h2 = var(G)/var(pheno)
@@ -256,3 +278,27 @@ plot(temp, temp2)
 plot(pred_vals$a.eff$p, temp2 + e.dist.func(temp2, var(temp2), pred_vals$h))
 
 #lots of residual variance that is genetic in nature is left by the model!
+
+
+
+# influence of different loci on pop level effect of genetic value
+plot(abs(pred_vals$e.eff$V2*(rowSums(pred_vals$x)/ncol(pred_vals$x))))
+plot(abs(meta$effect[meta$effect != 0]*rowSums(x[meta$effect != 0,])/ncol(x))) #many more high impact loci
+plot(abs(pred_vals$e.eff$V2*(rowSums(pred_vals$x)/ncol(pred_vals$x))),
+     abs(meta$effect[meta$effect != 0]*rowSums(x[meta$effect != 0,])/ncol(x)))
+
+#1: alleleic variance drops MASSIVELY after gen one, causing the effective h to plummet.
+# here's why: rearranging the chromosomes randomly consistantly causes a severe drop in var(a)
+#predicted data:
+temp <-get.pheno.vals(pred_vals$x, pred_vals$e.eff$V2, h = pred_vals$h)
+r.x <- pred_vals$x[,sample(x = ncol(pred_vals$x), ncol(pred_vals$x), replace = F)]
+temp.r <- get.pheno.vals(as.data.table(r.x), pred_vals$e.eff$V2, h = pred_vals$h)
+var(temp.r$a)/var(temp$a)
+
+#simulated data:
+temp <- get.pheno.vals(x, meta$effect, h = .5)
+r.x <- x[,sample(1:ncol(x), ncol(x), replace = F)]
+temp.r <- get.pheno.vals(r.x, meta$effect, h = .5)
+var(temp.r$a)/var(temp$a)
+
+#maybe this is due to a high prior on allelic variance?
