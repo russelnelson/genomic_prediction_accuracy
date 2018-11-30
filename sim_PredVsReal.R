@@ -46,17 +46,15 @@ effect.dist.func <- function(n){
   # (x - min(x))/(max(x) - min(x))
 }
 
-#logarithmic growth
+#logistic growth
 l_g_func <- function(x, K =575, r = 2){
-  return((K*x*exp(r))/(K + x*(exp(r*1) - 1)))
+  return((K*x*exp(r))/(K + x*(exp(r) - 1)))
 }
-
-
 
 #surivival probability follows a normal distribution around the optimal phenotype.
 s_norm_scaled_func <- function(x, opt_pheno, hist_var = h.pv, ...){
   x <- dnorm(x, opt_pheno, sqrt(hist_var)*4) #normal dist, sd is based on ancestral var
-  ((.7-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .5
+  ((.7-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .7
   #(x-min(x))/(max(x)-min(x)) #scaled.
 }
 s_norm_fixed_var_scaled_func <- function(x, opt_pheno, fixed_var = 1, ...){
@@ -75,8 +73,10 @@ sopt_const_func <- function(x, slide = 1, ...){ #fixed increase, probably more r
   x <- x + slide
 }
 
-#recombination distribution
-rec.dist <- 1/2^(0:floor(log(1000,2)))
+#recombination distribution, Poission with one expected recombination event per chr.
+rec.dist <- function(x){
+  return(rpois(x, lambda = 1))
+}
 
 
 #========================source scripts===============================
@@ -98,7 +98,6 @@ meta$effect[which(meta$effect == 1)] <- effect.dist.func(sum(meta$effect)) #what
 cat("Mean effect size:", mean(meta$effect), "\n")
 
 #=========================call the prediction function====================
-x <- matrix(as.numeric(x), nrow(x))
 pred_vals <- pred(x = x, 
                   effect.sizes = meta$effect, 
                   h = h, 
@@ -302,3 +301,20 @@ temp.r <- get.pheno.vals(r.x, meta$effect, h = .5)
 var(temp.r$a)/var(temp$a)
 
 #maybe this is due to a high prior on allelic variance?
+
+
+
+
+re.gs <- gs(x = x, 
+            effect.sizes = meta$effect, 
+            h = h, 
+            gens = max_gens, 
+            growth.function =  l_g_func, 
+            survival.function = s_norm_scaled_func, 
+            selection.shift.function = sopt_const_func, 
+            rec.dist = rec.dist, 
+            meta = meta, 
+            plot_during_progress = F, 
+            chr.length = chrl, 
+            print.all.freqs = F)
+
