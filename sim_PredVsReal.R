@@ -27,14 +27,16 @@ make.ig <- TRUE # should new input files for JWAS be created?
 sub.ig <- FALSE # Numeric or FALSE. Should we randomly subset out some SNPs to run in JWAS?
 maf <- FALSE # Numeric or FALSE. Should we remove SNPs with a low minor allele frequency? If so, how low?
 qtl_only <- TRUE # Should we only put QTLs into JWAS? If TRUE, overrides sub.ig and maf.
-chain_length <- 100000 # How long should the MCMC chain in JWAS be?
-burnin <- 50000 # How many MCMC iterations should we discard at the start of the chain? Must be less than chain_length!
-pass.resid <- 0 # Numeric or NULL. Should we pass residual variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
-pass.var <- 0 # Numeric or NULL. Should we pass genetic variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
+method <- "BGLR" # Which method are we using to generate estimated effect sizes?
+model <- "BayesC" # What model should we use?
+chain_length <- 20000 # How long should the MCMC chain in JWAS be?
+burnin <- 2000 # How many MCMC iterations should we discard at the start of the chain? Must be less than chain_length!
+thin <- 300 # How should the MCMC iterations be thinned?
+pass.resid <- 0.25 # Numeric or NULL. Should we pass residual variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
+pass.var <- 0.25 # Numeric or NULL. Should we pass genetic variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
 standardize <- FALSE # Should phenotypes be centered and scaled before being passed to JWAS?
 adjust_phenotypes <- TRUE # When doing selection on the prediced effect sizes, do we need to re-adjust phenotypic variance to match the initial variance? Mostly useful since variances predicted by JWAS are less than that in the data provided to it, so the variance needs to be adjusted if you want to use the observed phenotypes for the first round of selection.
 intercept_adjust <- T # For selection on the predicted effect sizes, should we re-adjust phenotypes given an intercept (the mean phenotypic value of the input data)? 
-JWAS.model <- "RR-BLUP" # What JWAS model should we use?
 julia.path <- "/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/julia.exe" # What is the path to julia.exe?
 # path_libjulia <- "C:/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/libjulia.dll"
 # JWASr::jwasr_setup_win(path_libjulia)
@@ -97,14 +99,19 @@ meta$effect <- rbinom(nrow(meta), 1, prob.effect) #does each site have an effect
 meta$effect[which(meta$effect == 1)] <- effect.dist.func(sum(meta$effect)) #what are the effect sizes?
 cat("Mean effect size:", mean(meta$effect), "\n")
 
+#generate individual effects
+ind.effects <- get.pheno.vals(x, meta$effect, h = h, standardize = standardize)
+
 #=========================call the prediction function====================
 pred_vals <- pred(x = x, 
-                  effect.sizes = meta$effect, 
-                  h = h, 
-                  chr.length = chrl, 
+                  effect.sizes = meta$effect,
+                  ind.effects = ind.effects,
+                  chr.length = chrl,
+                  method = method,
                   chain_length = chain_length,
                   burnin = burnin,
-                  JWAS.model = JWAS.model,
+                  thin = thin,
+                  model = model,
                   make.ig = make.ig, 
                   sub.ig = sub.ig, 
                   maf.filt = maf, 
@@ -289,18 +296,23 @@ plot(abs(pred_vals$e.eff$V2*(rowSums(pred_vals$x)/ncol(pred_vals$x))),
 #1: alleleic variance drops MASSIVELY after gen one, causing the effective h to plummet.
 # here's why: rearranging the chromosomes randomly consistantly causes a severe drop in var(a)
 #predicted data:
-temp <-get.pheno.vals(pred_vals$x, pred_vals$e.eff$V2, h = pred_vals$h)
+temp <-get.pheno.vals(pred_vals$x, effect.sizes = pred_vals$e.eff$V2, h = pred_vals$h) # note, h doesn't matter for this funciton, since we're only looking at genetic effects!
 r.x <- pred_vals$x[,sample(x = ncol(pred_vals$x), ncol(pred_vals$x), replace = F)]
 temp.r <- get.pheno.vals(as.data.table(r.x), pred_vals$e.eff$V2, h = pred_vals$h)
 var(temp.r$a)/var(temp$a)
 
 #simulated data:
-temp <- get.pheno.vals(x, meta$effect, h = .5)
+temp <- get.pheno.vals(x, meta$effect, h = 1)
 r.x <- x[,sample(1:ncol(x), ncol(x), replace = F)]
-temp.r <- get.pheno.vals(r.x, meta$effect, h = .5)
+temp.r <- get.pheno.vals(r.x, meta$effect, h = 1)
 var(temp.r$a)/var(temp$a)
 
-#maybe this is due to a high prior on allelic variance?
+# my guess: The model assumes a smaller variance in effect sizes than the data actually has. In order to best
+# match the observed data, it therefore positions effect sizes to maximize the variance of the data set, since
+# individual effects are not as large. See density plots of effect sizes:
+plot(density(pred_vals$e.eff$V2)) # predicted, much lower variance in effect sizes
+plot(density(pred_vals$meta$effect)) # real, much higher variance in effect sizes.
+plot(pred_vals$e.eff$V2 ~ pred_vals$meta$effect) # real data has a much larger spread. Most of the predicted values are much closer to zero!
 
 
 
@@ -318,3 +330,26 @@ re.gs <- gs(x = x,
             chr.length = chrl, 
             print.all.freqs = F)
 
+
+
+
+pred_vals <- pred(x = x, 
+                  effect.sizes = meta$effect,
+                  ind.effects = ind.effects,
+                  chr.length = chrl,
+                  method = "BGLR",
+                  chain_length = 20000,
+                  burnin = 2000,
+                  model = "BL",
+                  make.ig = make.ig, 
+                  sub.ig = sub.ig, 
+                  maf.filt = maf, 
+                  julia.path = julia.path, 
+                  runID = runID, 
+                  qtl_only = qtl_only,
+                  pass.resid = pass.resid,
+                  pass.var = pass.var,
+                  standardize = standardize)
+
+plot(density(pred_vals$e.eff$V2))
+plot(density(meta$effect[meta$effect != 0]))

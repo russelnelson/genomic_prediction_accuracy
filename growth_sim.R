@@ -11,7 +11,7 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
 
   
   #get effect of each individual:
-  a <- weighted.colSums(as.matrix(x), effect.sizes)
+  a <- weighted.colSums(as.matrix(x), effect.sizes) # faster than t(x)%*%effect.sizes!
   
   a.ind <- a[seq(1, length(a), by = 2)] + a[seq(2, length(a), by = 2)] #add across both gene copies.
   
@@ -503,31 +503,64 @@ pgs <- function(x, n_runs, effect.sizes, h, gens, growth.function, survival.func
 #                a numeric value other than zero will fudge the variance number by up to the proportion given (1 fudges up to 100%).
 #    pass.var: NULL or numeric >= 0. Like pass.resid, but for the true genetic variance.
 #    standardize: Boolean. Should the addative genetic values be centered and scaled between -1 and 1 prior to entry into JWAS? Phenotypic values still won't be centered!
-pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 100000, burnin = 50000, 
-                 JWAS.model,
+pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
+                 method = "JWAS",
+                 chain_length = 100000, 
+                 burnin = 50000,
+                 thin = 100,
+                 model = NULL,
                  make.ig = FALSE, sub.ig = FALSE, maf.filt = 0.05, 
                  julia.path = "julia", runID = "r1", qtl_only = FALSE,
                  pass.resid = NULL, pass.var = NULL, standardize = FALSE,
                  save.meta = TRUE){
   
-  cat("Preparing JWAS inputs...\n")
   
-  #============format data for JWAS==============
-  ind.effects <- get.pheno.vals(x, effect.sizes, h = h, standardize = standardize)
-  r.ind.effects <- ind.effects
-  
-  if(!dir.exists(runID)){
-    dir.create(runID)
+  #============sanity checks================================
+  # check that all of the required arguments are provided for the model we are running
+  if(method %in% c("JWAS", "BGLR", "PLINK", "TASSEL")){
+    
+    # JWAS checks
+    if(method == "JWAS"){
+      # chain length and burnin
+      if(!is.numeric(c(chain_length, burnin))){
+        stop("Chain_length and burnin must be numeric values.")
+      }
+      if(chain_length <= burnin){
+        stop("Chain_length must be larger than burnin in order to estimate effect sizes.")
+      }
+      
+      # path to julia
+      if(!is.character(julia.path)){
+        stop("Invalid path to julia executable.")
+      }
+      if(!file.exists(julia.path)){
+        stop("Invalid path to julia executable.")
+      }
+      
+      # JWAS model-for now, only RR-BLUP.
+      if(!model %in% c("RR-BLUP")){
+        stop("Invalid JWAS model.")
+      }
+    }
+    
+    # BGLR checks:
+    else if(method == "BGLR"){
+      # chain length and burnin
+      if(!is.numeric(c(chain_length, burnin))){
+        stop("Chain_length and burnin must be numeric values.")
+      }
+    }
   }
-  owd <- getwd()
-  setwd(runID)
+  else{
+    stop("Invalid method provided. Options: JWAS, BGLR, PLINK, or TASSEL.")
+  }
   
-  #write.table(meta, "meta.txt", quote = F, col.names = T, row.names = F)
-  ind.effects <- cbind(samp = as.character(1:500), phenotypes = ind.effects$p)
-  write.table(ind.effects, "ie.txt", quote = F, col.names = T, row.names = F)
+  cat("Preparing model inputs...\n")
   
-  #make an individual genotype file if it isn't already constructed.
-  if(make.ig){
+  #============subfunctions=================================
+  # do filters if requested
+  filter_snps <- function(x, qtl_only, sub.ig, maf.filt, effect.sizes){
+    # qtl_only
     if(qtl_only){
       if(sub.ig != FALSE | maf.filt != FALSE){
         warning("No subsampling (sub.ig) or maf filtering (maf.filt) will occur when qtl_only = TRUE.\n")
@@ -537,8 +570,8 @@ pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 10000
       meta <- meta[s.markers,]
     }
     
+    # otherwise, other filters to check
     else{
-      
       #filter low minor allele frequencies if requested (like many prediction studies will do!)
       if(maf.filt != FALSE){
         m.keep <- matrixStats::rowSums2(x)/ncol(x) >= maf.filt
@@ -557,59 +590,132 @@ pred <- function(x, effect.sizes, h, chr.length = 10000000, chain_length = 10000
           warning("Fewer markers than sub.ig. Running all markers.\n")
         }
       }
+    }
+    return(list(x = x, meta = meta))
+  }
+  
+  # convert two column to one column genotypes and transpose
+  convert_1_to_2_column <- function(x){
+    ind.genos <- x[,seq(1,ncol(x), by = 2)] + x[,seq(2,ncol(x), by = 2)]
+    ind.genos <- matrix(ind.genos, nrow = ncol(x)/2, byrow = T) # rematrix and transpose!
+    return(ind.genos)
+  }
+  
+  
+  #============prepare directories and other things=========
+  r.ind.effects <- ind.effects # backup the ind effects.
+  
+  # create the directory to store results if it doesn't already exist and move over to it.
+  if(!dir.exists(runID)){
+    dir.create(runID)
+  }
+  owd <- getwd()
+  setwd(runID)
+  
+  #============format data for prediction/GWAS==============
+  
+  if(method == "JWAS"){
+    # make an individual effect file.
+    ind.effects <- cbind(samp = as.character(1:500), phenotypes = ind.effects$p)
+    write.table(ind.effects, "ie.txt", quote = F, col.names = T, row.names = F)
+    
+    # make an individual genotype file if it isn't already constructed.
+    if(make.ig){
+      #filter
+      x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
+      x <- x$meta
+      x <- x$x
       
+      # convert format
+      ind.genos <- convert_1_to_2_column(x)
+      ind.genos <- cbind(samp = 1:nrow(ind.genos), ind.genos) # add sample info
+      colnames(ind.genos) <- c("samp", paste0("m", 1:(ncol(ind.genos)-1)))
+      write.table(ind.genos, "ig.txt", quote = F, col.names = T, row.names = F)
+    }
+  }
+  
+  else if(method == "BGLR"){
+    # filter
+    x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
+    meta <- x$meta
+    x <- x$x
+    
+    # convert
+    ind.genos <- convert_1_to_2_column(x) # rows are individuals, columns are SNPs
+    colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
+    rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
+    
+    # prepare ETA
+    ETA <- list(list(X = ind.genos, model = model, saveEffects = T))
+  }
+  
+  
+  #=========run genomic prediction or GWAS and return results==========
+  # for JWAS:
+  if(method == "JWAS"){
+    cat("Calling JWAS.\n")
+    options(scipen = 999)
+    julia.call <- paste0(julia.path, " ", owd, "/analysis.jl ", chain_length, " ", burnin)
+    # add the residual and genetic variance if requested.
+    if(!is.null(pass.resid)){
+      rv <- var(r.ind.effects$p - r.ind.effects$a)
+      rv <- rv + rv*runif(1, 0, pass.resid) #fudge according to factor provided
+    }
+    else{
+      rv <- 1
+    }
+    if(!is.null(pass.var)){
+      gv <- var(r.ind.effects$a)
+      gv <- gv + gv*runif(1, 0, pass.var) #fudge according to factor provided
+    }
+    else{
+      gv <- 1
+    }
+    julia.call <- paste0(julia.call, " ", rv, " ", gv, " ", model)
+    system(julia.call)
+    
+    #=========grab output and modify it to give the estimated effect size per locus=============
+    e.eff <- read.table("est_effects.txt", header = F, sep = "\t")
+    h <- read.table("h.txt")
+    
+    #save metadata for the selected markers if requested.
+    if(save.meta){
+      write.table(meta, "est_meta.txt", sep = "\t", quote = F, col.names = T, row.names = F)
     }
     
+    setwd(owd)
     
+    return(list(x = x, e.eff = e.eff, a.eff = r.ind.effects, meta = meta, h = as.numeric(h)))
+  }
+  
+  # for BGLR:
+  else if(method == "BGLR"){
+    cat("Calling BGLR.\n")
+    BGLR_mod <- BGLR::BGLR(y = ind.effects$pheno, ETA = ETA, nIter = chain_length, burnIn = burnin, thin = thin)
     
-    ind.genos <- paste0(x[,seq(1,ncol(x), by = 2)], x[,seq(2,ncol(x), by = 2)])
-    ind.genos <- matrix(ind.genos, ncol = ncol(x)/2)
-    ind.genos <- gsub("00", "0", ind.genos)
-    ind.genos <- gsub("01", "1", ind.genos)
-    ind.genos <- gsub("10", "1", ind.genos)
-    ind.genos <- gsub("11", "2", ind.genos)
-    ind.genos <- t(ind.genos)
-    ind.genos <- cbind(samp = 1:nrow(ind.genos), ind.genos)
-    colnames(ind.genos) <- c("samp", paste0("m", 1:(ncol(ind.genos)-1)))
-    write.table(ind.genos, "ig.txt", quote = F, col.names = T, row.names = F)
+    # grab h2 estimate
+    B <- BGLR::readBinMat('ETA_1_b.bin')
+    h2 <- rep(NA,nrow(B))
+    varU <- h2
+    varE <- h2
+    for(i in 1:length(h2)){
+      u <- ind.genos%*%B[i,]	
+      varU[i] <- var(u)
+      varE[i] <- var(ind.effects$pheno-u)
+      h2[i] <- varU[i]/(varU[i] + varE[i])
+    }
+    h2 <- mean(h2)
+    
+    # return the values
+    e.eff <- data.frame(V1 = BGLR_mod$ETA[[1]]$colNames, V2 = BGLR_mod$ETA[[1]]$b, stringsAsFactors = F)
+    write.table(e.eff, "est_effects.txt", sep = "\t", col.names = F, row.names = F, quote = F)
+    write.table(h2, "h.txt", quote = F)
+    if(save.meta){
+      write.table(meta, "est_meta.txt", sep = "\t", quote = F, col.names = T, row.names = F)
+    }
+    
+    setwd(owd)
+    return(list(x = x, e.eff = e.eff, a.eff = r.ind.effects, meta = meta, h = h2))
   }
-  
-  #=========run genomic prediction via julia console call==========
-  cat("Calling JWAS.\n")
-  options(scipen = 999)
-  julia.call <- paste0(julia.path, " ", owd, "/analysis.jl ", chain_length, " ", burnin)
-  # add the residual and genetic variance if requested.
-  if(!is.null(pass.resid)){
-    rv <- var(r.ind.effects$p - r.ind.effects$a)
-    rv <- rv + rv*runif(1, 0, pass.resid) #fudge according to factor provided
-  }
-  else{
-    rv <- 1
-  }
-  if(!is.null(pass.var)){
-    gv <- var(r.ind.effects$a)
-    gv <- gv + gv*runif(1, 0, pass.var) #fudge according to factor provided
-  }
-  else{
-    gv <- 1
-  }
-  julia.call <- paste0(julia.call, " ", rv, " ", gv, " ", JWAS.model)
-  system(julia.call)
-  
-  #=========grab output and modify it to give the estimated effect size per locus=============
-  e.eff <- read.table("est_effects.txt", header = F, sep = "\t")
-  h <- read.table("h.txt")
-  
-  #save metadata for the selected markers if requested.
-  if(save.meta){
-    write.table(meta, "est_meta.txt", sep = "\t", quote = F, col.names = T, row.names = F)
-  }
-  
-  setwd(owd)
-  
-  # since JWAS returns the estimated amount that each locus adjusts the mean phenotype per individual,
-  # the mean phenotype for selection will need to be set to 0!
-  
-  return(list(x = x, e.eff = e.eff, a.eff = r.ind.effects, meta = meta, h = as.numeric(h)))
-  
 }
+
