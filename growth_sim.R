@@ -201,7 +201,10 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, 
 #=======function to do growth and selection=======
 gs <- function(x, effect.sizes, h, gens, growth.function, survival.function, 
                selection.shift.function, rec.dist,
-               meta, plot_during_progress = FALSE, 
+               meta, 
+               method = "model",
+               model = "observed",
+               plot_during_progress = FALSE, 
                facet = "group", chr.length = 10000000, fgen.pheno = FALSE,
                intercept_adjust = FALSE,
                print.all.freqs = FALSE,
@@ -213,6 +216,24 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
   if(nrow(x) != length(effect.sizes) | nrow(x) != nrow(meta)){
     stop("Provided x, effect sizes, and meta must all be of equal length!")
   }
+  
+  
+  if(!method %in% c("model", "effects")){
+    stop("Method must be provided. Options:\n\tmodel: predict phenotypes directly from the model provided.\n\teffects: predict phenotypes from estimated effect sizes.")
+    
+    if(method == "model"){
+      if(!model %in% c("JWAS", "BGLR", "RF")){
+        stop("To predict from the model, a JWAS, BGLR, or RF(ranger) model must be provided.\n")
+      }
+    }
+    else{
+      if(model == "RF"){
+        stop("RF does not estimate effect sizes, so prediction must be done using the RF model.\n")
+      }
+    }
+  }
+  
+  
   
   #================
   # before doing anything else, go ahead and remove any loci from those provided with no effect! Faster this way.
@@ -511,13 +532,16 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
                  model = NULL,
                  make.ig = FALSE, sub.ig = FALSE, maf.filt = 0.05, 
                  julia.path = "julia", runID = "r1", qtl_only = FALSE,
-                 pass.resid = NULL, pass.var = NULL, standardize = FALSE,
+                 pass.resid = NULL, pass.var = NULL, 
+                 ntree = 500,
+                 null.tree = 100,
+                 boot.ntree = 500,
+                 standardize = FALSE,
                  save.meta = TRUE){
-  
   
   #============sanity checks================================
   # check that all of the required arguments are provided for the model we are running
-  if(method %in% c("JWAS", "BGLR", "PLINK", "TASSEL")){
+  if(method %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "RF")){
     
     # JWAS checks
     if(method == "JWAS"){
@@ -550,9 +574,50 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
         stop("Chain_length and burnin must be numeric values.")
       }
     }
+    
+    # random forest
+    else if(method == "RF"){
+      # model
+      if(!(model %in% c("RF", "RJ"))){
+        stop("For random forest, the model must be RF (random forest) or RJ (random jungle).")
+      }
+      
+      # ntree
+      if(!is.numeric(ntree)){
+        stop("ntree must be an integer!")
+      }
+      if(ntree != floor(ntree)){
+        stop("ntree must be an integer!")
+      }
+      
+      # null distribution checks
+      # if doing a null:
+      if(!is.null(null.tree)){
+        
+        # if it's not a matrix or array
+        if(!(is.matrix(null.tree) | is.array(null.tree))){
+          if(!is.numeric(null.tree)){
+            stop("null.tree must either be provided or an integer.")
+          }
+          if(null.tree != floor(null.tree)){
+            stop("null.tree must either be provided or an integer.")
+          }
+          else{
+            if(!is.numeric(boot.ntrees)){
+              stop("boot.ntrees must be an integer.")
+            }
+            if(boot.ntrees != floor(boot.ntrees)){
+              stop("boot.ntrees must be an integer.")
+            }
+          }
+        }
+      }
+      
+    }
+    
   }
   else{
-    stop("Invalid method provided. Options: JWAS, BGLR, PLINK, or TASSEL.")
+    stop("Invalid method provided. Options: JWAS, BGLR, PLINK, TASSEL, or RF.")
   }
   
   cat("Preparing model inputs...\n")
@@ -649,6 +714,18 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
     ETA <- list(list(X = ind.genos, model = model, saveEffects = T))
   }
   
+  else if(method == "RF"){
+    x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
+    meta <- x$meta
+    x <- x$x
+    
+    t.x <- convert_1_to_2_column(x) # add sample info
+    colnames(t.x) <- paste0("m", 1:ncol(t.x))
+    
+    t.eff <- data.frame(phenotype = ind.effects$pheno, stringsAsFactors = F)
+    t.eff <- cbind(t.eff, t.x)
+  }
+  
   
   #=========run genomic prediction or GWAS and return results==========
   # for JWAS:
@@ -716,6 +793,50 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
     
     setwd(owd)
     return(list(x = x, e.eff = e.eff, a.eff = r.ind.effects, meta = meta, h = h2))
+  }
+  
+  # for randomForest
+  else if(method == "RF"){
+    cat("Running randomforest (ranger rj implementaiton).\n")
+    # run the randomForest/jungle
+    if(ncol(t.eff) - 1 >= 10000){
+      rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff, num.trees = ntree, importance = "impurity", verbose = T, save.memory = T)
+    }
+    else{
+      rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff, num.trees = ntree, importance = "impurity", verbose = T)
+    }
+    
+    # if using a null distribution to scale importance values, do that:
+    if(!is.null(null.tree)){
+      
+      # make a null distribution if not provided
+      # note, should only need to do this once for each input dataset (Ne, effect.size, seq res, ect), since the null dists should converge! Don't need to do one for each individual trial.
+      if(is.numeric(null.tree) & length(null.tree) == 1){
+        
+        # get bootstrapped phenotypes.
+        null.dat <- matrix(sample(t.eff$phenotype, null.tree*length(t.eff$phenotype), replace = T), 
+                           nrow = nrow(t.x), ncol = null.tree) # permuted phenotypes.
+        
+        # initialize null distribution storage and run simulations for RF and RJ
+        null.mat <- matrix(0, null.tree, nrow(x)) # output. rows are simulations, columns are SNPs
+        
+        cat(paste0("Generating null distribution of size ", null.tree, ".\n\trep: 1\n"))
+        for(i in 1:null.tree){
+          if((i %% 10) == 0){cat("\t", i, ".\n")}
+          tdat <- as.data.frame(cbind(phenotype = null.dat[,i], t.x), stringsAsFactors = F)
+          trf <- ranger::ranger(phenotype ~ ., data = tdat, num.trees = boot.ntrees, importance = "impurity")
+          null.mat[i,] <- trf$variable.importance
+        }
+        
+        null.size <- null.tree
+      }
+      else{
+        null.size <- ncol(null.tree)
+      }
+      p1 <- 1 - (rowSums(rj$variable.importance > t(null.mat))/null.size)
+      rj$bootstrap.pval <- p1
+    }
+    return(list(x = x, rj = rj, a.eff = r.ind.effects, meta = meta))
   }
 }
 

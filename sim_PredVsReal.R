@@ -12,68 +12,140 @@ library(ggplot2)
 # outname <- as.character(args[2])
 # run_n <- as.character(args[3])
 
+# file and storage information:
 runID <- "r01" # run ID and directory name where intermediate results will be stored. Will be created if needed.
 x <- "theta4k_1000_10_rho40k.txt" # name of input ms format data
 outname <- "trial_300_runs.RDS" # file name to save output dataset NOT CURRENTLY IMPLEMENTED
-chrl <- 10000000 # chromosome length CURRENTLY THE SAME ACROSS ALL CHRs
-max_gens <- 1000 # maximum number of gens to do selection
-n_runs <- 3 # number of times to run the selection operation NOT CURRENTLY IMPLEMENTED
-h <- 0.5 # h^2, or heritability for the trait prior to any selection.
-prob.effect <- 0.01 # probability that any single SNP has an effect
-effect.sd <- 0.5 # sd of effect sizes
+save.meta <- T # should we save the metadata file when doing prediction/GWAS
+julia.path <- "/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/julia.exe" # What is the path to julia.exe (if using JWAS)?
+
+# genome information
+chrl <- 10000000 # chromosome length CURRENTLY MUST BE THE SAME ACROSS ALL CHRs
+
+# effect size information
+effect.dist <- "fixed.n.normal" # which effect distribution should we use
+prob.effect <- 0.01 # probability that any single SNP has an effect, for effect dists without a fixed number of effect loci.
+effect.sd <- .5 # sd of effect sizes
 effect.mean <- 0 # mean of effect sizes
-r <- 2 # growth rate of population NOT CURRENTLY IMPLEMENTED, CHANGE IN MODEL BELOW
-make.ig <- TRUE # should new input files for JWAS be created?
-sub.ig <- FALSE # Numeric or FALSE. Should we randomly subset out some SNPs to run in JWAS?
+n.eff <- 100 # number of SNPs with effects for the "fixed.n.normal" model.
+h <- 0.5 # h^2, or heritability for the trait prior to any selection.
+
+# growth model information
+r <- 2 # growth rate of population
+K <- 575 # population carrying capacity
+
+# survival model information
+survival.dist <- "scaled.normal"
+hvs <- 4 # if sqrt(historic genetic variance) (the "historic.variance" model) is used, by what factor should the survival sd be adjusted?
+fixed.var <- 45 # if a fixed survival variance (the "scaled.normal" model) is used, what should the survival varaince be?
+
+# selection optimum model
+sopt.model <- "fixed"
+sopt.slide.iv <- 0.1 # by what proportion of initial genetic variance should the slection optimum slide each gen (for the "starting.variance" model) 
+sopt.slide.fixed <- 1 # by how much should the survival option slide each gen (for the "fixed" model)
+
+# effect size estimation
+method <- "RF" # Which method are we using to generate estimated effect sizes?
+model <- "RJ" # What model should we use?
+sub.ig <- 50000 # Numeric or FALSE. Should we randomly subset out some SNPs to run during model estimation?
 maf <- FALSE # Numeric or FALSE. Should we remove SNPs with a low minor allele frequency? If so, how low?
-qtl_only <- TRUE # Should we only put QTLs into JWAS? If TRUE, overrides sub.ig and maf.
-method <- "BGLR" # Which method are we using to generate estimated effect sizes?
-model <- "BayesC" # What model should we use?
-chain_length <- 20000 # How long should the MCMC chain in JWAS be?
-burnin <- 2000 # How many MCMC iterations should we discard at the start of the chain? Must be less than chain_length!
-thin <- 300 # How should the MCMC iterations be thinned?
+qtl_only <- FALSE # Should we only put QTLs into JWAS/BGLR? If TRUE, overrides sub.ig and maf.
+chain_length <- 20000 # How long should the MCMC chain in JWAS/BGLR be?
+burnin <- 2000 # How many MCMC iterations should we discard at the start of the chain for JWAS/BGLR? Must be less than chain_length!
+thin <- 300 # How should the MCMC iterations be thinned? For BGLR only.
 pass.resid <- 0.25 # Numeric or NULL. Should we pass residual variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
 pass.var <- 0.25 # Numeric or NULL. Should we pass genetic variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
-standardize <- FALSE # Should phenotypes be centered and scaled before being passed to JWAS?
-adjust_phenotypes <- TRUE # When doing selection on the prediced effect sizes, do we need to re-adjust phenotypic variance to match the initial variance? Mostly useful since variances predicted by JWAS are less than that in the data provided to it, so the variance needs to be adjusted if you want to use the observed phenotypes for the first round of selection.
+ntree <- 500 # Numeric. How many trees should the RF model use?
+null.trees <- NULL # Numeric, NULL or 3 dimensional array/matrix. Either the number of times to run an RF to make a null distribution of importance values or an existing null distribution. If NULL, doesn't compare to a null dist. For RF, use a 3d array, for RJ, use a matrix.
+boot.ntrees <- 500 # Numeric. If a null RF distribution is being made, how many trees should be generated for each run?
+make.ig <- TRUE # should new input files for JWAS be created?
+standardize <- FALSE # Should phenotypes be centered and scaled before being passed to JWAS/BGLR?
+
+# simulation parameters
+max_gens <- 1000 # maximum number of gens to do selection
+n_runs <- 3 # number of times to run the selection operation NOT CURRENTLY IMPLEMENTED
+adjust_phenotypes <- TRUE # When doing selection on the prediced effect sizes, do we need to re-adjust phenotypic variance to match the initial variance? Mostly useful since variances predicted by JWAS/BGLR are less than that in the data provided to it, so the variance needs to be adjusted if you want to use the observed phenotypes for the first round of selection.
 intercept_adjust <- T # For selection on the predicted effect sizes, should we re-adjust phenotypes given an intercept (the mean phenotypic value of the input data)? 
-julia.path <- "/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/julia.exe" # What is the path to julia.exe?
-# path_libjulia <- "C:/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/libjulia.dll"
-# JWASr::jwasr_setup_win(path_libjulia)
+
 
 #========================models and distributions for simulations=======================================
 #loci effect size distribution
-effect.dist.func <- function(n){
-  x <- rnorm(n, effect.mean, effect.sd)
+## zero inflated normal
+effect.dist.func.znorm <- function(n){
+  eff <- rbinom(n, 1, prob.effect) #does each site have an effect?
+  eff[which(eff == 1)] <- rnorm(sum(eff), effect.mean, effect.sd) #what are the effect sizes?
   # (x - min(x))/(max(x) - min(x))
+  return(eff)
+}
+## fixed number of effects, normal dist. For equal effects, can just do effect.sd = 0.
+effect.dist.func.fn <- function(n){
+  eff <- numeric(n)
+  eff[sample(n, n.eff, replace = F)] <- rnorm(n.eff, effect.mean, effect.sd)
+  return(eff)
+}
+## set the dist to use:
+if(effect.dist == "zero.inflated.normal"){
+  effect.dist.func <- effect.dist.func.znorm
+}
+if(effect.dist == "fixed.n.normal"){
+  effect.dist.func <- effect.dist.func.fn
 }
 
-#logistic growth
-l_g_func <- function(x, K =575, r = 2){
+
+
+
+# population growth
+l_g_func <- function(x){
   return((K*x*exp(r))/(K + x*(exp(r) - 1)))
 }
 
+
+
+
 #surivival probability follows a normal distribution around the optimal phenotype.
+## surivial variance based on historical genomic variance
 s_norm_scaled_func <- function(x, opt_pheno, hist_var = h.pv, ...){
-  x <- dnorm(x, opt_pheno, sqrt(hist_var)*4) #normal dist, sd is based on ancestral var
+  x <- dnorm(x, opt_pheno, sqrt(hist_var)*hvs) #normal dist, sd is based on ancestral var
   ((.7-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .7
   #(x-min(x))/(max(x)-min(x)) #scaled.
 }
-s_norm_fixed_var_scaled_func <- function(x, opt_pheno, fixed_var = 1, ...){
+## fixed survival variance
+s_norm_fixed_var_scaled_func <- function(x, opt_pheno, ...){
   x <- dnorm(x, opt_pheno, fixed_var) #normal dist, sd is provided. 
   ((.7-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .5
   #(x-min(x))/(max(x)-min(x)) #scaled.
 }
+## set appropriate model
+if(survival.dist == "historic.variance"){
+  survival.dist.func <- s_norm_scaled_func
+}
+if(survival.dist == "fixed.variance"){
+  survival.dist.func <- s_norm_fixed_var_scaled_func
+}
 
 
-#increases the selection optimum by a percentage each gen
-sopt_sp_func <- function(x, iv, slide = .1, ...){ #increase is a percentage of starting variance
+
+
+# selection shift
+## increases the selection optimum by a percentage of starting variance
+sopt_sp_func <- function(x, iv, slide = sopt.slide.iv, ...){ #increase is a percentage of starting variance
   if(iv == 0){stop("With a genetic variance of zero, the mean phenotype will not change each gen! Consider using a fixed phenotype slide.\n")}
   x <- x + iv*slide
 }
-sopt_const_func <- function(x, slide = 1, ...){ #fixed increase, probably more realistic...
+## increases the selection optimum by a fixed amount
+sopt_const_func <- function(x, slide = sopt.slide.fixed, ...){ #fixed increase, probably more realistic...
   x <- x + slide
 }
+## set the correct model
+if(sopt.model == "fixed"){
+  sopt.func <- sopt_const_func
+}
+if(sopt.model == "starting.variance"){
+  sopt.func <- sopt_sp_func
+}
+
+
+
 
 #recombination distribution, Poission with one expected recombination event per chr.
 rec.dist <- function(x){
@@ -95,8 +167,7 @@ meta <- x$meta
 x <- x$x
 
 #assign effects
-meta$effect <- rbinom(nrow(meta), 1, prob.effect) #does each site have an effect?
-meta$effect[which(meta$effect == 1)] <- effect.dist.func(sum(meta$effect)) #what are the effect sizes?
+meta$effect <- effect.dist.func(nrow(meta))
 cat("Mean effect size:", mean(meta$effect), "\n")
 
 #generate individual effects
@@ -120,7 +191,8 @@ pred_vals <- pred(x = x,
                   qtl_only = qtl_only,
                   pass.resid = pass.resid,
                   pass.var = pass.var,
-                  standardize = standardize)
+                  standardize = standardize,
+                  save.meta = save.meta)
 
 
 # pred_vals <- readRDS("full_data_pred_vals.RDS") 
@@ -166,8 +238,8 @@ pr.gs <- gs(x = pred_vals$x,
             h = pred_vals$h, 
             gens = max_gens,
             growth.function = l_g_func, 
-            survival.function = s_norm_scaled_func, 
-            selection.shift.function = sopt_const_func, 
+            survival.function = survival.dist.func, 
+            selection.shift.function = sopt.func, 
             rec.dist = rec.dist,
             meta = pred_vals$meta, 
             plot_during_progress = F, 
@@ -183,8 +255,8 @@ re.gs <- gs(x = x,
             h = h, 
             gens = max_gens, 
             growth.function =  l_g_func, 
-            survival.function = s_norm_scaled_func, 
-            selection.shift.function = sopt_const_func, 
+            survival.function = survival.dist.func, 
+            selection.shift.function = sopt.func, 
             rec.dist = rec.dist, 
             meta = meta, 
             plot_during_progress = F, 
