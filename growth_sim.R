@@ -17,8 +17,7 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
   
   #standardize the genetic variance if requested.
   if(standardize){
-    a.ind <- (a.ind - min(a.ind))/diff(range(a.ind))
-    a.ind <- a.ind - mean(a.ind)
+    a.ind <- a.ind/sd(a.ind)
   }
   
   #add environmental variance
@@ -32,6 +31,12 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
   }
 }
 
+#converts 2 column to 1 column genotypes and transposes
+convert_2_to_1_column <- function(x){
+  ind.genos <- x[,seq(1,ncol(x), by = 2)] + x[,seq(2,ncol(x), by = 2)]
+  ind.genos <- matrix(ind.genos, nrow = ncol(x)/2, byrow = T) # rematrix and transpose!
+  return(ind.genos)
+}
 
 #function to do column sums faster
 src <- '
@@ -49,6 +54,9 @@ weighted.colSums <- inline::cxxfunction(
 
 #=======function to do a single generation of random mating===========
 rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, facet = "group"){
+  if(!data.table::is.data.table(x)){
+    x <- data.table::as.data.table(x)
+  }
   #=========get parents and assign gcs for the next gen====
   #make a new x with individuals in next gen
   ##find parents
@@ -199,37 +207,64 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, 
 }
 
 #=======function to do growth and selection=======
-gs <- function(x, effect.sizes, h, gens, growth.function, survival.function, 
-               selection.shift.function, rec.dist,
-               meta, 
-               method = "model",
+gs <- function(x, 
+               effect.sizes = NULL, 
+               h,
+               gens, 
+               growth.function, 
+               survival.function, 
+               selection.shift.function, 
+               rec.dist,
+               meta,
+               var.theta = 0,
+               method = "effects",
                model = "observed",
+               h_est = NULL,
+               pred.mod = NULL,
                plot_during_progress = FALSE, 
-               facet = "group", chr.length = 10000000, fgen.pheno = FALSE,
+               facet = "group", chr.length = 10000000,
+               fgen.pheno = FALSE,
                intercept_adjust = FALSE,
                print.all.freqs = FALSE,
                adjust_phenotypes = FALSE,
                do.sexes = TRUE){
   cat("Initializing...\n")
-  
+
   #=================checks========
-  if(nrow(x) != length(effect.sizes) | nrow(x) != nrow(meta)){
-    stop("Provided x, effect sizes, and meta must all be of equal length!")
+  if(!data.table::is.data.table(x)){
+    x <- data.table::as.data.table(x)
   }
+  
+  if(!is.null(effect.sizes)){
+    if(nrow(x) != length(effect.sizes) | nrow(x) != nrow(meta)){
+      stop("Provided x, effect sizes, and meta must all be of equal length!")
+    }
+  }
+  else{
+    if(nrow(x) != nrow(meta)){
+      stop("Provided x, effect sizes, and meta must all be of equal length!")
+    }
+  }
+  
   
   
   if(!method %in% c("model", "effects")){
     stop("Method must be provided. Options:\n\tmodel: predict phenotypes directly from the model provided.\n\teffects: predict phenotypes from estimated effect sizes.")
-    
-    if(method == "model"){
-      if(!model %in% c("JWAS", "BGLR", "RF")){
-        stop("To predict from the model, a JWAS, BGLR, or RF(ranger) model must be provided.\n")
-      }
+  }
+  if(method == "model"){
+    # will need this!
+    e.dist.func <- function(A1, hist.a.var, h){
+      esd <- sqrt((hist.a.var/h)-hist.a.var) # re-arrangement of var(pheno) = var(G) + var(E) and h2 = var(G)/var(pheno)
+      env.vals <- rnorm(length(A1), 0, esd)
+      return(env.vals)
     }
-    else{
-      if(model == "RF"){
-        stop("RF does not estimate effect sizes, so prediction must be done using the RF model.\n")
-      }
+    if(!model %in% c("JWAS", "BGLR", "RF")){
+      stop("To predict from the model, a JWAS, BGLR, or RF(ranger) model must be provided.\n")
+    }
+  }
+  else{
+    if(model == "RF"){
+      stop("RF does not estimate effect sizes, so prediction must be done using the RF model.\n")
     }
   }
   
@@ -237,27 +272,51 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
   
   #================
   # before doing anything else, go ahead and remove any loci from those provided with no effect! Faster this way.
-  if(any(effect.sizes == 0)){
-    n.eff <- which(effect.sizes == 0)
-    x <- x[-n.eff,]
-    meta <- meta[-n.eff,]
-    effect.sizes <- effect.sizes[-n.eff]
+  if(!is.null(effect.sizes)){
+    if(any(effect.sizes == 0)){
+      n.eff <- which(effect.sizes == 0)
+      x <- x[-n.eff,]
+      meta <- meta[-n.eff,]
+      effect.sizes <- effect.sizes[-n.eff]
+    }
   }
   
-  
-  
   #===========prepare the first gen=========
+  # get starting phenotypes and addative genetic values
   if(length(fgen.pheno) != ncol(x)/2){
     cat("Generating starting phenotypic values from data.")
     pheno <- get.pheno.vals(x, effect.sizes, h)
-  
+    
     a <- pheno$a #addative genetic values
     pheno <- pheno$pheno #phenotypic values
   }
   else{
     cat("Using provided phenotypic values.")
     pheno <- fgen.pheno #provded phenotypic values.
-    a <- get.pheno.vals(x, effect.sizes, h)$a # genetic values from data
+    
+    #if we are given effect sizes, grab a from those
+    if(!is.null(effect.sizes)){
+      a <- get.pheno.vals(x, effect.sizes, h)$a # genetic values from data
+    }
+    #otherwise pull predicted values if given
+    #WORKING HERE
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     #get the adjustment factor to use based on provided vs. predicted phenotypes.
     #to do this, calculate adjust_phenotypes phenotypic variances created by sampling enivironmental effects.
@@ -282,13 +341,13 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
       "\n\tmean phenotypic value:", mean(pheno), "\n\taddative genetic variance:", var(a), "\n\tphenotypic variance:", var(pheno), "\n\th:", h, "\n")
   
   #make output matrix and get initial conditions
-  out <- matrix(NA, nrow = gens + 1, ncol = 6)
-  colnames(out) <- c("N", "mu_pheno", "mu_a", "opt", "diff", "var_a")
+  out <- matrix(NA, nrow = gens + 1, ncol = 7)
+  colnames(out) <- c("N", "mu_pheno", "mu_a", "opt", "diff", "var_a", "stochastic_opt")
   N <- ncol(x)/2 #initial pop size
   h.av <- var(a) #get the historic addative genetic variance.
   h.pv <- var(pheno) #historic phenotypic variance.
-  
-  out[1,] <- c(N, mean(pheno), mean(a), opt, 0, h.av) #add this and the mean initial additive genetic variance
+
+  out[1,] <- c(N, mean(pheno), mean(a), opt, 0, h.av, opt) #add this and the mean initial additive genetic variance
   if(plot_during_progress){
     library(ggplot2)
     pdat <- reshape2::melt(out)
@@ -318,9 +377,12 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
 
   for(i in 2:(gens+1)){
     #=========survival====
+    # get the optimum phenotype this gen
+    t.opt <- rnorm(1, opt, var.theta)
+    
     #survival:
     s <- rbinom(out[(i-1),1], 1, #survive or not? Number of draws is the pop size in prev gen, surival probabilities are determined by the phenotypic variance and optimal phenotype in this gen.
-                survival.function(c(pheno, opt), opt, hist_var = h.pv)[-(length(pheno) + 1)]) # calling the function in this way ensures that individuals with phenotypes at the optimum have a survival probability of whatever is set in the function.
+                survival.function(pheno, t.opt, hist.var = h.pv)) # calling the function in this way ensures that individuals with phenotypes at the optimum have a survival probability of whatever is set in the function.
     #if the population has died out, stop.
     if(sum(s) <= 1){
       if(print.all.freqs){
@@ -356,11 +418,22 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     
     #=============do random mating, adjust selection, get new phenotype scores, get ready for next gen====
     x <- rand.mating(x, out[i,1], meta, rec.dist, chr.length, do.sexes, facet)
-    plot(effect.sizes*(rowSums(x)/ncol(x)))
+    
     #get phenotypic/genetic values
-    pheno <- get.pheno.vals(x, effect.sizes, h, hist.a.var = h.av)
-    a <- pheno$a #addative genetic values
-    pheno <- pheno$pheno #phenotypic values
+    if(method == "effects"){
+      pheno <- get.pheno.vals(x, effect.sizes, h, hist.a.var = h.av)
+      a <- pheno$a #addative genetic values
+      pheno <- pheno$pheno #phenotypic values
+    }
+    else{
+      if(model == "RF"){
+        x <- as.matrix(x)
+        x.c <- convert_2_to_1_column(x)
+        colnames(xc) <- pred.mod$forest$independent.variable.names
+        a <- predict(pred_vals$rj, as.data.frame(x2))
+        pheno <- a + e.dist.func(a, h.av, h_est)
+      }
+    }
     
     
     #if requested, adjust the phenotypic values.
@@ -384,10 +457,13 @@ gs <- function(x, effect.sizes, h, gens, growth.function, survival.function,
     out[i,4] <- opt
     out[i,5] <- opt - mean(a)
     out[i,6] <- var(a)
-    cat("gen:", i-1, "\topt_s:", round(out[i-1,4],3), 
+    out[i,7] <- t.opt
+    cat("gen:", i-1, 
+        "\tf_opt:", round(out[i-1,4],3),
+        "\ts_opt", round(out[i-1,7],3),
         "\tmean(pheno):", round(out[i,2],3),  
         "\tmean(a):", round(out[i,3],3),
-        "\tvar(pheno):", round(var(pheno)),
+        "\tvar(a):", round(var(a),3),
         "\tNs:", sum(s), 
         "\tN(t+1):", out[i,1],"\n")
     

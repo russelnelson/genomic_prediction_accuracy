@@ -14,7 +14,7 @@ library(ggplot2)
 
 # file and storage information:
 runID <- "r01" # run ID and directory name where intermediate results will be stored. Will be created if needed.
-x <- "theta4k_1000_10_rho40k.txt" # name of input ms format data
+x <- "C:/Users/hemst/Documents/ss_file_access/theta4k_1000_10_rho40k.txt" # name of input ms format data
 outname <- "trial_300_runs.RDS" # file name to save output dataset NOT CURRENTLY IMPLEMENTED
 save.meta <- T # should we save the metadata file when doing prediction/GWAS
 julia.path <- "/Users/Hemstrom/AppData/Local/Julia-0.7.0/bin/julia.exe" # What is the path to julia.exe (if using JWAS)?
@@ -27,22 +27,23 @@ effect.dist <- "fixed.n.normal" # which effect distribution should we use
 prob.effect <- 0.01 # probability that any single SNP has an effect, for effect dists without a fixed number of effect loci.
 effect.sd <- .5 # sd of effect sizes
 effect.mean <- 0 # mean of effect sizes
-n.eff <- 100 # number of SNPs with effects for the "fixed.n.normal" model.
+n.eff <- 200 # number of SNPs with effects for the "fixed.n.normal" model.
 h <- 0.5 # h^2, or heritability for the trait prior to any selection.
 
 # growth model information
 r <- 2 # growth rate of population
-K <- 575 # population carrying capacity
+K <- 500 # population carrying capacity
 
 # survival model information
-survival.dist <- "scaled.normal"
+survival.dist <- "historic.variance"
 hvs <- 4 # if sqrt(historic genetic variance) (the "historic.variance" model) is used, by what factor should the survival sd be adjusted?
-fixed.var <- 45 # if a fixed survival variance (the "scaled.normal" model) is used, what should the survival varaince be?
+fixed.var <- 45 # if a fixed survival variance (the "fixed.variance" model) is used, what should the survival varaince be?
 
 # selection optimum model
 sopt.model <- "fixed"
 sopt.slide.iv <- 0.1 # by what proportion of initial genetic variance should the slection optimum slide each gen (for the "starting.variance" model) 
 sopt.slide.fixed <- 1 # by how much should the survival option slide each gen (for the "fixed" model)
+var.theta <- 0.1 # how much environmental stochasticity is there?
 
 # effect size estimation
 method <- "RF" # Which method are we using to generate estimated effect sizes?
@@ -55,9 +56,9 @@ burnin <- 2000 # How many MCMC iterations should we discard at the start of the 
 thin <- 300 # How should the MCMC iterations be thinned? For BGLR only.
 pass.resid <- 0.25 # Numeric or NULL. Should we pass residual variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
 pass.var <- 0.25 # Numeric or NULL. Should we pass genetic variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
-ntree <- 500 # Numeric. How many trees should the RF model use?
-null.trees <- NULL # Numeric, NULL or 3 dimensional array/matrix. Either the number of times to run an RF to make a null distribution of importance values or an existing null distribution. If NULL, doesn't compare to a null dist. For RF, use a 3d array, for RJ, use a matrix.
-boot.ntrees <- 500 # Numeric. If a null RF distribution is being made, how many trees should be generated for each run?
+ntree <- 1000 # Numeric. How many trees should the RF model use?
+null.tree <- NULL # Numeric, NULL or 3 dimensional array/matrix. Either the number of times to run an RF to make a null distribution of importance values or an existing null distribution. If NULL, doesn't compare to a null dist. For RF, use a 3d array, for RJ, use a matrix.
+boot.ntree <- NULL # Numeric. If a null RF distribution is being made, how many trees should be generated for each run?
 make.ig <- TRUE # should new input files for JWAS be created?
 standardize <- FALSE # Should phenotypes be centered and scaled before being passed to JWAS/BGLR?
 
@@ -102,33 +103,33 @@ l_g_func <- function(x){
 
 
 
-#surivival probability follows a normal distribution around the optimal phenotype.
+#surivival probability follows a gaussian distribution around the optimal phenotype.
 ## surivial variance based on historical genomic variance
-s_norm_scaled_func <- function(x, opt_pheno, hist_var = h.pv, ...){
-  x <- dnorm(x, opt_pheno, sqrt(hist_var)*hvs) #normal dist, sd is based on ancestral var
-  ((.7-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .7
-  #(x-min(x))/(max(x)-min(x)) #scaled.
+s_gauss_scaled_func <- function(x, opt_pheno, hist.var = sqrt(h.pv), ...){
+  x <- exp(-(x-opt_pheno)^2/(2*hist.var^2))
+  return(x)
 }
 ## fixed survival variance
-s_norm_fixed_var_scaled_func <- function(x, opt_pheno, ...){
-  x <- dnorm(x, opt_pheno, fixed_var) #normal dist, sd is provided. 
-  ((.7-0)*(x-min(x))/(max(x) - min(x))) #scaled between 0 and .5
+s_gauss_fixed_var_scaled_func <- function(x, opt_pheno, ...){
+  x <- exp(-(x-opt_pheno)^2/(2*fixed.var^2))
+  return(x)
   #(x-min(x))/(max(x)-min(x)) #scaled.
 }
 ## set appropriate model
 if(survival.dist == "historic.variance"){
-  survival.dist.func <- s_norm_scaled_func
+  survival.dist.func <- s_gauss_scaled_func
 }
 if(survival.dist == "fixed.variance"){
-  survival.dist.func <- s_norm_fixed_var_scaled_func
+  survival.dist.func <- s_gauss_fixed_var_scaled_func
 }
+
 
 
 
 
 # selection shift
 ## increases the selection optimum by a percentage of starting variance
-sopt_sp_func <- function(x, iv, slide = sopt.slide.iv, ...){ #increase is a percentage of starting variance
+sopt_ivar_func <- function(x, iv,  slide = sopt.slide.iv, ...){ #increase is a percentage of starting variance
   if(iv == 0){stop("With a genetic variance of zero, the mean phenotype will not change each gen! Consider using a fixed phenotype slide.\n")}
   x <- x + iv*slide
 }
@@ -141,7 +142,7 @@ if(sopt.model == "fixed"){
   sopt.func <- sopt_const_func
 }
 if(sopt.model == "starting.variance"){
-  sopt.func <- sopt_sp_func
+  sopt.func <- sopt_ivar_func
 }
 
 
@@ -191,6 +192,9 @@ pred_vals <- pred(x = x,
                   qtl_only = qtl_only,
                   pass.resid = pass.resid,
                   pass.var = pass.var,
+                  ntree = ntree, 
+                  null.tree = null.tree,
+                  boot.ntree = boot.ntree, 
                   standardize = standardize,
                   save.meta = save.meta)
 
@@ -234,14 +238,17 @@ x <- as.data.table(x)
 
 #simulation on predicted data. The first generation phenotypes aren't used here, since they are far from what would be predicted.
 pr.gs <- gs(x = pred_vals$x, 
-            effect.sizes = pred_vals$e.eff[,2], 
-            h = pred_vals$h, 
+            method = "model",
+            model = "RF",
+            h = pred_vals$h,
+            h_est = 0.5,
             gens = max_gens,
             growth.function = l_g_func, 
             survival.function = survival.dist.func, 
             selection.shift.function = sopt.func, 
             rec.dist = rec.dist,
-            meta = pred_vals$meta, 
+            meta = pred_vals$meta,
+            var.theta = var.theta, 
             plot_during_progress = F, 
             chr.length = chrl, 
             print.all.freqs = F,
@@ -258,7 +265,8 @@ re.gs <- gs(x = x,
             survival.function = survival.dist.func, 
             selection.shift.function = sopt.func, 
             rec.dist = rec.dist, 
-            meta = meta, 
+            meta = meta,
+            var.theta = var.theta,
             plot_during_progress = F, 
             chr.length = chrl, 
             print.all.freqs = F,
@@ -425,3 +433,19 @@ pred_vals <- pred(x = x,
 
 plot(density(pred_vals$e.eff$V2))
 plot(density(meta$effect[meta$effect != 0]))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# running gs off of model with no estimate effects
+# should psuedo-code this, since it's a bit different, at least for the set-up and diversity corrections.
