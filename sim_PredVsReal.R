@@ -1,9 +1,35 @@
+#=========================work notes============
+#  GP
+##    Predictions have very high r2 on average, and do a good job of estimating h2.
+##    problems:
+###     predictions have lower gv
+###     when recombination occurs, gv drops significantly.
+###     fixed some of the phenotype adjustment given starting variance. Maybe should just based all of the slides on the re-shuffled var(a) instead? That'd be much cleaner.
+
+
+#  RF
+##    Predictions have good r2 if given QTLs only and .5 mtry with few trees (100000).
+##    problems:
+###     Shitty with more, random SNPs. Need to try with whole data.
+###     Need to estimate h2 elsewhere and bring in to the demographic sims, since the model r2 is very bad usually.
+####      Could do this via ML too, but seems like a pain in the butt. Just use BGLR or JWAS BLUP?
+
+
+#  GWAS
+##    Haven't started much. Can convert to PLINK formats using snpR.
+
+
+
+# Demo sims
+##    Working well overall.
+##    Problems:
+###     Could use mutation and some kind of meltdown at low pop sizes.
+###     Using a 10 gen init. Extend or eliminate?
+
+#=========================script=====================
 # This script reads in a set of simulated genomic data, randomly assigns phenotypic effects, runs
 # genomic prediction on those effects, and then simulates selection forward in time for both the predicted
 # and actual effects.
-
-# Note: JWAS is very slow for large numbers of markers. Try GBLUP method in JWAS?
-
 #========================define parameters==========
 args <- commandArgs(TRUE)
 library(ggplot2)
@@ -36,18 +62,18 @@ K <- 500 # population carrying capacity
 
 # survival model information
 survival.dist <- "historic.variance"
-hvs <- 4 # if sqrt(historic genetic variance) (the "historic.variance" model) is used, by what factor should the survival sd be adjusted?
 fixed.var <- 45 # if a fixed survival variance (the "fixed.variance" model) is used, what should the survival varaince be?
+sigma <- 1 # if the "historic.variance" option is used, the sigma (selection strength) variable of the gaussian kernal will be equal to sigma*historic_genetic_variance.
 
 # selection optimum model
-sopt.model <- "fixed"
-sopt.slide.iv <- 0.1 # by what proportion of initial genetic variance should the slection optimum slide each gen (for the "starting.variance" model) 
+sopt.model <- "starting.variance" # which model? "fixed": fixed slide. "starting.variance" slide by a proportion of starting variance.
+sopt.slide.iv <- 0.075 # by what proportion of initial genetic variance should the slection optimum slide each gen (for the "starting.variance" model) 
 sopt.slide.fixed <- 1 # by how much should the survival option slide each gen (for the "fixed" model)
 var.theta <- 0.1 # how much environmental stochasticity is there?
 
 # effect size estimation
-method <- "RF" # Which method are we using to generate estimated effect sizes?
-model <- "RJ" # What model should we use?
+prediction.program <- "ranger" # Which prediction program are we using to generate estimated effect sizes?
+prediction.model <- "RJ" # What prediction model should we use?
 sub.ig <- 50000 # Numeric or FALSE. Should we randomly subset out some SNPs to run during model estimation?
 maf <- FALSE # Numeric or FALSE. Should we remove SNPs with a low minor allele frequency? If so, how low?
 qtl_only <- FALSE # Should we only put QTLs into JWAS/BGLR? If TRUE, overrides sub.ig and maf.
@@ -57,16 +83,17 @@ thin <- 300 # How should the MCMC iterations be thinned? For BGLR only.
 pass.resid <- 0.25 # Numeric or NULL. Should we pass residual variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
 pass.var <- 0.25 # Numeric or NULL. Should we pass genetic variance to JWAS? If a number, by what maximum proportion should we randomly adjust the value before passing it?
 ntree <- 1000 # Numeric. How many trees should the RF model use?
+mtry <- .1 # Numeric 0 to 1. The forest mtry will be set to p*mtry, where p is the number of individuals.
 null.tree <- NULL # Numeric, NULL or 3 dimensional array/matrix. Either the number of times to run an RF to make a null distribution of importance values or an existing null distribution. If NULL, doesn't compare to a null dist. For RF, use a 3d array, for RJ, use a matrix.
 boot.ntree <- NULL # Numeric. If a null RF distribution is being made, how many trees should be generated for each run?
 make.ig <- TRUE # should new input files for JWAS be created?
-standardize <- FALSE # Should phenotypes be centered and scaled before being passed to JWAS/BGLR?
+standardize <- TRUE # Should phenotypes be centered and scaled before being passed to JWAS/BGLR/ranger?
 
 # simulation parameters
 max_gens <- 1000 # maximum number of gens to do selection
 n_runs <- 3 # number of times to run the selection operation NOT CURRENTLY IMPLEMENTED
-adjust_phenotypes <- TRUE # When doing selection on the prediced effect sizes, do we need to re-adjust phenotypic variance to match the initial variance? Mostly useful since variances predicted by JWAS/BGLR are less than that in the data provided to it, so the variance needs to be adjusted if you want to use the observed phenotypes for the first round of selection.
-intercept_adjust <- T # For selection on the predicted effect sizes, should we re-adjust phenotypes given an intercept (the mean phenotypic value of the input data)? 
+adjust_phenotypes <- F # When doing selection on the prediced effect sizes, do we need to re-adjust phenotypic variance to match the initial variance? Mostly useful since variances predicted by JWAS/BGLR are less than that in the data provided to it, so the variance needs to be adjusted if you want to use the observed phenotypes for the first round of selection.
+intercept_adjust <- F # For selection on the predicted effect sizes, should we re-adjust phenotypes given an intercept (the mean phenotypic value of the input data)? 
 
 
 #========================models and distributions for simulations=======================================
@@ -106,7 +133,7 @@ l_g_func <- function(x){
 #surivival probability follows a gaussian distribution around the optimal phenotype.
 ## surivial variance based on historical genomic variance
 s_gauss_scaled_func <- function(x, opt_pheno, hist.var = sqrt(h.pv), ...){
-  x <- exp(-(x-opt_pheno)^2/(2*hist.var^2))
+  x <- exp(-(x-opt_pheno)^2/(2*(hist.var*sigma)^2))
   return(x)
 }
 ## fixed survival variance
@@ -171,19 +198,18 @@ x <- x$x
 meta$effect <- effect.dist.func(nrow(meta))
 cat("Mean effect size:", mean(meta$effect), "\n")
 
-#generate individual effects
-ind.effects <- get.pheno.vals(x, meta$effect, h = h, standardize = standardize)
 
 #=========================call the prediction function====================
 pred_vals <- pred(x = x, 
+                  meta = meta,
                   effect.sizes = meta$effect,
-                  ind.effects = ind.effects,
+                  phenotypes = NULL,
                   chr.length = chrl,
-                  method = method,
+                  prediction.program = prediction.program,
                   chain_length = chain_length,
                   burnin = burnin,
                   thin = thin,
-                  model = model,
+                  prediction.model = prediction.model,
                   make.ig = make.ig, 
                   sub.ig = sub.ig, 
                   maf.filt = maf, 

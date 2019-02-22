@@ -1,15 +1,21 @@
-#======internal functions=======
+#=======internal functions=======
+#function to generate random environmental effects for a given set of BVs, addative genetic variance (either historic or current from BVs are typical), and heritability.
+# note that standardization isn't perfect, but will result in data with a mean very close to 0 and var close to 1. The randomness of assigning random environmental effects everywhere will make it imperfect
+# downstream standardization of the phenotypes will fix this if using estimated effect sizes!
+e.dist.func <- function(A1, hist.a.var, h, standardize = F){
+  esd <- sqrt((hist.a.var/h)-hist.a.var) # re-arrangement of var(pheno) = var(G) + var(E) and h2 = var(G)/var(pheno)
+  env.vals <- rnorm(length(A1), 0, esd)
+  
+  #if it standardization is requested, do so
+  if(standardize){
+    env.vals <- env.vals/sqrt(var(env.vals)/(1-h)) # set variance to 1 - h
+    env.vals <- env.vals - mean(env.vals) # set mean to 0. Should be close, but not perfect because of the random draws.
+  }
+  return(env.vals)
+}
+
 #get phenotypic values given genotypes, effect sizes, and heritabilities. If hist.a.var is true, uses the amount of genomic variability this gen and h to figure out how big of an env effect to add. Otherwise uses the provided value (probably that in the first generation).
 get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize = FALSE){
-  #function to add an enivronmental effect.
-  e.dist.func <- function(A1, hist.a.var, h){
-    esd <- sqrt((hist.a.var/h)-hist.a.var) # re-arrangement of var(pheno) = var(G) + var(E) and h2 = var(G)/var(pheno)
-    env.vals <- rnorm(length(A1), 0, esd)
-    return(env.vals)
-  }
-  
-
-  
   #get effect of each individual:
   a <- weighted.colSums(as.matrix(x), effect.sizes) # faster than t(x)%*%effect.sizes!
   
@@ -17,22 +23,24 @@ get.pheno.vals <- function(x, effect.sizes, h, hist.a.var = "fgen", standardize 
   
   #standardize the genetic variance if requested.
   if(standardize){
-    a.ind <- a.ind/sd(a.ind)
+    a.ind <- a.ind/sqrt(var(a.ind)/h) # set the variance to h.
+    a.ind <- a.ind - mean(a.ind) # set the mean to 0
   }
   
   #add environmental variance
   if(hist.a.var == "fgen"){
-    pheno <- a.ind + e.dist.func(a.ind, var(a.ind), h)
-    return(list(pheno = pheno, a = a.ind))
+    pheno <- a.ind + e.dist.func(a.ind, var(a.ind), h, standardize)
+    return(list(p = pheno, a = a.ind))
   }
   else{
-    pheno <- a.ind + e.dist.func(a.ind, hist.a.var, h)
-    return(list(pheno = pheno, a = a.ind))
+    pheno <- a.ind + e.dist.func(a.ind, hist.a.var, h, standardize)
+    return(list(p = pheno, a = a.ind))
   }
 }
 
 #converts 2 column to 1 column genotypes and transposes
 convert_2_to_1_column <- function(x){
+  if(!is.matrix(x)){x <- as.matrix(x)}
   ind.genos <- x[,seq(1,ncol(x), by = 2)] + x[,seq(2,ncol(x), by = 2)]
   ind.genos <- matrix(ind.genos, nrow = ncol(x)/2, byrow = T) # rematrix and transpose!
   return(ind.genos)
@@ -52,6 +60,86 @@ src <- '
 weighted.colSums <- inline::cxxfunction(
   signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
 
+# Function to calculate the estimated time untill a population begins to crash (growth rate less than one) based on Burger and Lynch 1995.
+#    g_var: addative genetic variance
+#    e_var: environmental variance
+#    omega: width of the fitness function, usually given as omega^2
+#    k: rate of environmental change in phenotypic standard deviations
+#    B: mean number of offspring per individual
+#    Ne: effective population size
+#    theta_var: environmental stochasticity
+B_L_t1_func <- function(g_var, e_var, omega, k, B, Ne, theta_var){
+  # calc Vs
+  Vs <- (omega^2) + e_var
+  
+  # calc Vlam
+  # simplified: Vlam = (Vs*(1+2*Ne))/2*Ne + (((1+2*Vs)*(g_var+theta_var))/2*Vs)
+  V_gt <- (Vs/(2*Ne)) + (g_var*theta_var)/(2*Vs)
+  Vlam <- Vs + g_var + V_gt + theta_var
+  
+  #calc kc
+  Bo <- B*omega/sqrt(Vlam)
+  if(Bo < 1){
+    return(list(t1 = NA, kc = NA, Vs = Vs, Vlam = Vlam, Bo = Bo))
+  }
+  kc <- (g_var/(g_var + Vs))*sqrt(2*Vs*log(Bo))
+  
+  if(k<kc){
+    t1 <- Inf
+  }
+  else{
+    t1 <- -((g_var + Vs)/g_var)*log(1-(kc/k))
+  }
+  
+  #calc t1
+  return(list(t1 = t1, kc = kc, Vs = Vs, Vlam = Vlam, Bo = Bo))
+}
+
+
+# function to extract BV predictions from a model
+# pred.model: The GWAS/GP/ECT provided model
+# g: the genotype matrix, where columns are gene copies
+# pred.method: Should the BVs be predicted directly off the model ("model") or off of loci effects ("effects")?
+# model.source: Which program made the model? Currently supports BGLR, JWAS, or RJ (ranger).
+# h: heritability estimate
+# h.av: historic genetic varaince, for prediction from effect sizes.
+# effect.sizes: marker effect sizes, for prediction from effect sizes.
+pred.BV.from.model <- function(pred.model, g, pred.method = NULL, model.source = NULL, h = NULL, h.av = NULL, effect.sizes = NULL){
+  if(pred.method == "effects"){
+    pheno <- get.pheno.vals(g, effect.sizes, h, hist.a.var = h.av)
+    a <- pheno$a #addative genetic values
+    pheno <- pheno$p #phenotypic values
+    return(list(a = a, p = pheno))
+  }
+  
+  else{
+    if(!is.matrix(g)){g <- as.matrix(g)}
+    if(model.source == "BGLR"){
+      g <- convert_2_to_1_column(g)
+      a <- as.vector(g%*%pred.model$ETA[[1]]$b)
+    }
+    else if(model.source == "RJ"){
+      g <- convert_2_to_1_column(g)
+      colnames(g) <- pred.model$forest$independent.variable.names
+      a <- predict(pred.model, as.data.frame(g))
+    }
+    else if(model.souce == "JWAS"){
+      #in progress
+    }
+    else{
+      #in progress
+    }
+    
+    if(h.av == "fgen"){
+      h.av <- var(a)
+    }
+    pheno <- a + e.dist.func(a, h.av, h)
+    
+    return(list(a = a, p = pheno))
+  }
+}
+
+
 #=======function to do a single generation of random mating===========
 rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, facet = "group"){
   if(!data.table::is.data.table(x)){
@@ -62,6 +150,9 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, 
   ##find parents
   if(do.sexes){ # if there are two sexes
     sex <- rbinom(ncol(x)/2, 1, 0.5) #what are the parent sexes?
+    if(sum(sex) == length(sex) | sum(sex) == 0){ # if every individual is the same sex, the population dies.
+      return(NULL)
+    }
     mates <- matrix(0, nrow = N.next, ncol = 2) # initialize, p1 and p2 are columns
     mates[,1] <- which(sex == 1)[sample(sum(sex), nrow(mates), T)] #get parents of sex a
     mates[,2] <- which(sex == 0)[sample(length(sex) - sum(sex), nrow(mates), T)] #get parents of sex b
@@ -207,72 +298,87 @@ rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, 
 }
 
 #=======function to do growth and selection=======
+# note: init means are we simply intiating a population under selection. We'll need to keep all markers if so.
 gs <- function(x, 
-               effect.sizes = NULL, 
-               h,
                gens, 
                growth.function, 
                survival.function, 
                selection.shift.function, 
                rec.dist,
-               meta,
                var.theta = 0,
-               method = "effects",
-               model = "observed",
-               h_est = NULL,
-               pred.mod = NULL,
+               pred.method = "effects",
                plot_during_progress = FALSE, 
                facet = "group", chr.length = 10000000,
                fgen.pheno = FALSE,
                intercept_adjust = FALSE,
                print.all.freqs = FALSE,
                adjust_phenotypes = FALSE,
-               do.sexes = TRUE){
+               do.sexes = TRUE,
+               init = F){
   cat("Initializing...\n")
-
+  #unpack x:
+  if(pred.method == "effects"){ #unpack estimated effect sizes if provided.
+    effect.sizes <- x$e.eff[,2]
+  }
+  if(fgen.pheno){ #unpack phenotypes if requested
+    fgen.pheno <- x$phenotypes$p
+  }
+  h <- x$h
+  meta <- x$meta
+  if(pred.method != "real"){
+    pred.mod <- x$output.model$mod
+    pred.dat <- x$output.model$data
+    model <- x$prediction.program
+  }
+  else{
+    model <- "real"
+    pred.method <- "effects" #since everything else works the same, just need to change inputs.
+    effect.sizes <-  meta$effect
+  }
+  if(pred.method == "effects"){
+    pred.mod <- NULL
+    pred.dat <- NULL
+  }
+  if(pred.method == "model"){
+    effect.sizes <- NULL
+  }
+  x <- x$x
+  
+  
   #=================checks========
+  if(!pred.method %in% c("model", "effects")){
+    stop("pred.method must be provided. Options:\n\tmodel: predict phenotypes directly from the model provided.\n\teffects: predict phenotypes from estimated effect sizes.\n")
+  }
+  
   if(!data.table::is.data.table(x)){
     x <- data.table::as.data.table(x)
   }
   
-  if(!is.null(effect.sizes)){
+  if(pred.method == "effects"){
     if(nrow(x) != length(effect.sizes) | nrow(x) != nrow(meta)){
       stop("Provided x, effect sizes, and meta must all be of equal length!")
     }
   }
   else{
     if(nrow(x) != nrow(meta)){
-      stop("Provided x, effect sizes, and meta must all be of equal length!")
+      stop("Provided x and meta must be of equal length!")
     }
   }
-  
-  
-  
-  if(!method %in% c("model", "effects")){
-    stop("Method must be provided. Options:\n\tmodel: predict phenotypes directly from the model provided.\n\teffects: predict phenotypes from estimated effect sizes.")
-  }
-  if(method == "model"){
-    # will need this!
-    e.dist.func <- function(A1, hist.a.var, h){
-      esd <- sqrt((hist.a.var/h)-hist.a.var) # re-arrangement of var(pheno) = var(G) + var(E) and h2 = var(G)/var(pheno)
-      env.vals <- rnorm(length(A1), 0, esd)
-      return(env.vals)
-    }
-    if(!model %in% c("JWAS", "BGLR", "RF")){
-      stop("To predict from the model, a JWAS, BGLR, or RF(ranger) model must be provided.\n")
+
+  if(pred.method == "model"){
+    if(!model %in% c("JWAS", "BGLR", "ranger")){
+      stop("To predict from the model, a JWAS, BGLR, or ranger model must be provided.\n")
     }
   }
   else{
-    if(model == "RF"){
-      stop("RF does not estimate effect sizes, so prediction must be done using the RF model.\n")
+    if(model == "ranger"){
+      stop("RF does not estimate effect sizes, so prediction must be done using the ranger model.\n")
     }
   }
   
-  
-  
-  #================
   # before doing anything else, go ahead and remove any loci from those provided with no effect! Faster this way.
-  if(!is.null(effect.sizes)){
+  # don't do this if initializing the population!
+  if(pred.method == "effects" & !init){
     if(any(effect.sizes == 0)){
       n.eff <- which(effect.sizes == 0)
       x <- x[-n.eff,]
@@ -281,61 +387,70 @@ gs <- function(x,
     }
   }
   
-  #===========prepare the first gen=========
+  #=================get starting phenotypic values and BVs=========
   # get starting phenotypes and addative genetic values
+  ## If first gen phenos aren't provided (should be uncommon)
   if(length(fgen.pheno) != ncol(x)/2){
-    cat("Generating starting phenotypic values from data.")
-    pheno <- get.pheno.vals(x, effect.sizes, h)
-    
-    a <- pheno$a #addative genetic values
-    pheno <- pheno$pheno #phenotypic values
+    if(pred.method == "effects"){
+      cat("Generating representative starting phenotypes from effect sizes.")
+      pheno <- get.pheno.vals(x, effect.sizes, h)
+      a <- pheno$a # BVs
+      pheno <- pheno$p # phenotypic values
+    }
+    else{
+      cat("Generating representative starting phenotypes from model.")
+      a <- pred.BV.from.model(pred.mod, x, pred.method, model)
+      pheno <- a +  e.dist.func(a, var(a), h) #add environmental effects
+      #working here
+    }
   }
+  
+  # otherwise use those, but still need to estimate BVs
   else{
     cat("Using provided phenotypic values.")
     pheno <- fgen.pheno #provded phenotypic values.
     
-    #if we are given effect sizes, grab a from those
-    if(!is.null(effect.sizes)){
-      a <- get.pheno.vals(x, effect.sizes, h)$a # genetic values from data
-    }
-    #otherwise pull predicted values if given
-    #WORKING HERE
+    a <- pred.BV.from.model(pred.model = pred.mod, g = x, pred.method = pred.method, 
+                            model.source = model, h = h, h.av = "fgen", effect.sizes = effect.sizes)$a
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    #get the adjustment factor to use based on provided vs. predicted phenotypes.
-    #to do this, calculate adjust_phenotypes phenotypic variances created by sampling enivironmental effects.
-    #then, divide the observed phenotypic var by the mean of these.
-    #to adjust, multiply future phenotypes by the square root of these values, then adjust the mean back to the correct mean.
-    if(adjust_phenotypes != FALSE){
-      ad.factor <- var(a)/h # expected phenotypic variance given the allelic variance.
-      pred.hist.p.var <- ad.factor # save this for later
-      ad.factor <- var(pheno)/ad.factor # how much do we need to adjust?
-    }
-    
-    #if requested, get the amount to adjust phenotypes by in future gens.
-    if(intercept_adjust){
-      i.adj <- mean(pheno)
-    }
   }
   
-  #starting optimal phenotype, which is the starting mean phenotypic value.
-  opt <- mean(pheno) #optimum phenotype
+  #================set up BV variation adjustment to correct for drop in variance from GP methods============
+  if(adjust_phenotypes){
+    browser()
+    reorg_gcs <- rand.mating(x, ncol(x)/2, meta, rec.dist, chr.length, do.sexes, facet) # reorganize chrs once, since this causes one heck of a drop in var(a) in some GP results
+    reorg_gcs <- rand.mating(reorg_gcs, ncol(x)/2, meta, rec.dist, chr.length, do.sexes, facet)
+    re_p <- pred.BV.from.model(pred.model = pred.mod, g = reorg_gcs, pred.method = pred.method,
+                                    model.source = model, h = h, h.av = "fgen", effect.sizes = effect.sizes) # re-predict BVs
+    re_a <- re_p$a
+    re_p <- re_p$p
+    adj.a.var <- var(re_a) #variance next gen
+    
+    
+    # now need to adjust a and pheno to fit the variance a gen later
+    # multiply future phenotypes by the square root of these values, then adjust the mean back to the correct mean.
+    
+    
+    
+    # old version which adjusts back to the starting phenotypic var every generation.
+    # reorg_gcs <- rand.mating(x, ncol(x)/2, meta, rec.dist, chr.length, do.sexes, facet) # reorganize chrs once, since this causes one heck of a drop in var(a) in some GP results
+    # re_p <- pred.BV.from.model(pred.model = pred.mod, g = reorg_gcs, pred.method = pred.method, 
+    #                                 model.source = model, h = h, h.av = "fgen", effect.sizes = effect.sizes) # re-predict BVs
+    # re_a <- re_p$a
+    # re_p <- re_p$p
+    # ad.factor <- var(pheno)/(var(re_a)/h) # here's our adjustment factor
+    # rm(re_a, re_p, reorg_gcs)
+  }
+
+  #if requested, get the amount to adjust phenotypes by in future gens.
+  if(intercept_adjust){
+    i.adj <- mean(pheno)
+  }
+
+  #================print out initial conditions, intiallize final steps, and run===========
+  #starting optimal phenotype, which is the starting mean addative genetic value.
+  #browser()
+  opt <- mean(a) #optimum phenotype
   
   cat("\n\n===============done===============\n\nStarting parms:\n\tstarting optimum phenotype:", opt, 
       "\n\tmean phenotypic value:", mean(pheno), "\n\taddative genetic variance:", var(a), "\n\tphenotypic variance:", var(pheno), "\n\th:", h, "\n")
@@ -371,7 +486,7 @@ gs <- function(x,
     a.fqs[,1] <- rowSums(x)/ncol(x)
   }
   
-  #===========loop through each additional gen, doing selection, survival, and fisher sampling of survivors====
+  #================loop through each additional gen, doing selection, survival, and fisher sampling of survivors====
   
   cat("\nBeginning run...\n\n================================\n\n")
 
@@ -392,7 +507,7 @@ gs <- function(x,
       else{
         out <- out[1:(i-1),]
       }
-      return(out)
+      return(list(run_vars = out, x = x, phenos = pheno, BVs = a))
     }
     
     #what is the pop size after growth?
@@ -404,7 +519,7 @@ gs <- function(x,
     # # check phenotypic variance...
     # temp <- get.pheno.vals(x, effect.sizes, h, hist.a.var = h.av)
     # ptemp <- data.frame(val = c(a, temp$a), class = c(rep("T0", length(a)), rep("T1", length(temp$a))))
-    # temp <- temp$pheno
+    # temp <- tem$p
     # if(intercept_adjust){
     #   temp <- temp + i.adj
     # }
@@ -417,24 +532,26 @@ gs <- function(x,
     # print(var(temp))
     
     #=============do random mating, adjust selection, get new phenotype scores, get ready for next gen====
-    x <- rand.mating(x, out[i,1], meta, rec.dist, chr.length, do.sexes, facet)
-    
-    #get phenotypic/genetic values
-    if(method == "effects"){
-      pheno <- get.pheno.vals(x, effect.sizes, h, hist.a.var = h.av)
-      a <- pheno$a #addative genetic values
-      pheno <- pheno$pheno #phenotypic values
+    y <- rand.mating(x, out[i,1], meta, rec.dist, chr.length, do.sexes, facet)
+    # check that the pop didn't die due to every individual being the same sex (rand.mating returns NULL in this case.)
+    if(is.null(y)){
+      return(list(run_vars = out, x = x, phenos = pheno, BVs = a))
     }
     else{
-      if(model == "RF"){
-        x <- as.matrix(x)
-        x.c <- convert_2_to_1_column(x)
-        colnames(xc) <- pred.mod$forest$independent.variable.names
-        a <- predict(pred_vals$rj, as.data.frame(x2))
-        pheno <- a + e.dist.func(a, h.av, h_est)
-      }
+      x <- y
+      rm(y)
     }
     
+    #get phenotypic/genetic values
+    pa <- pred.BV.from.model(pred.model = pred.mod, 
+                             g = x, 
+                             pred.method = pred.method, 
+                             model.source = model, 
+                             h = h, 
+                             h.av = h.av, 
+                             effect.sizes = effect.sizes)
+    a <- pa$a
+    pheno <- pa$p
     
     #if requested, adjust the phenotypic values.
     # adjust intercept
@@ -450,7 +567,7 @@ gs <- function(x,
     
     #adjust selection optima
     opt <- selection.shift.function(opt, iv = sqrt(h.av))
-    
+
     #save
     out[i,2] <- mean(pheno)
     out[i,3] <- mean(a)
@@ -499,7 +616,7 @@ gs <- function(x,
     out <- list(summary = out, frequencies = a.fqs)
   }
   
-  return(out)
+  return(list(run_vars = out, x = x, phenos = pheno, BVs = a))
 }
 
 
@@ -593,34 +710,94 @@ pgs <- function(x, n_runs, effect.sizes, h, gens, growth.function, survival.func
 
 
 
+#=======function to initialize a population at a given selection optimum========
+# wrapper for gs() with no shift in surival and assuming real effect sizes (no model). x needs to contain phenotypes and meta with effects
+init_pop <- function(x,
+                     init_gens, 
+                     growth.function, 
+                     survival.function, 
+                     rec.dist,
+                     var.theta = 0,
+                     plot_during_progress = FALSE, 
+                     facet = "group", chr.length = 10000000,
+                     fgen.pheno = F,
+                     print.all.freqs = FALSE,
+                     do.sexes = TRUE){
+  #=======set the parms for calling gs======
+  s.shift.null <- function(x, ...){
+    return(x)
+  }
+  
+  if(!"effect" %in% colnames(x$meta)){
+    stop("Effects must be provided in as a column in x$meta.\n")
+  }
+  if(!"h" %in% names(x)){
+    stop("heritability must be provided in x$h.\n")
+  }
+  if(!is.numeric(x$h) | length(x$h) != 1){
+    stop("heritability must be a single numeric value.\n")
+  }
+  #call gs correctly to initialize with no shift in the survival function and assuming real effects.
+  out <- gs(x = x, 
+            gens = init_gens, 
+            growth.function = growth.function, 
+            survival.function = survival.function, 
+            selection.shift.function = s.shift.null, 
+            rec.dist = rec.dist, 
+            var.theta = var.theta, 
+            pred.method = "real", 
+            plot_during_progress = plot_during_progress, 
+            facet = facet, 
+            chr.length = chr.length, 
+            fgen.pheno = fgen.pheno,
+            intercept_adjust = F, 
+            print.all.freqs = print.all.freqs, 
+            adjust_phenotypes = F, 
+            do.sexes = do.sexes,
+            init = T)
+  return(out)
+}
+
+
 #=======function to take in input data, use genomic prediction to estimate effect sizes based on phenotypes==============
 #arugments:
+#    x: Input data, matrix, df, or data.table. Converted internally to data.table. Columns are gene copies, rows are SNPs, formatted as 0 and 1.
+#    effect.sizes: Vector of marker effect sizes. Will be optional eventually for prediction from phenotypes only.
+#    ind.effects: Individual addative genetic values/BVs for individuals. Will eventually be optional for prediction from phenotypes only.
+#    method: What method should we use to generate predictions? BGLR, JWAS, or ranger.
+#    chain.length: How long should the MCMC chain in JWAS/BGLR be?
+#    burnin: How many MCMC iterations should we discard at the start of the chain for JWAS/BGLR? Must be less than chain_length!
+#    thin: How should the MCMC iterations be thinned? For BGLR only.
+#    model: What model should we use? BGLR: FIXED, BL, BayesA-C, BRR. JWAS: G-BLUP, BayesA-C, RR-BLUP. ranger: RJ.
+#    make.ig: should new input files for JWAS be created? If they don't exist already, set to TRUE.
+#    sub.ig: 
 #    pass.resid: NULL or numeric >= 0. A numeric value tells the function to pass the 
 #                estimated residual variance in the model on to JWAS. A numeric value of 0 passes the exact variance,
 #                a numeric value other than zero will fudge the variance number by up to the proportion given (1 fudges up to 100%).
 #    pass.var: NULL or numeric >= 0. Like pass.resid, but for the true genetic variance.
 #    standardize: Boolean. Should the addative genetic values be centered and scaled between -1 and 1 prior to entry into JWAS? Phenotypic values still won't be centered!
-pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
-                 method = "JWAS",
+pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 10000000,
+                 prediction.program = "JWAS",
                  chain_length = 100000, 
                  burnin = 50000,
                  thin = 100,
-                 model = NULL,
-                 make.ig = FALSE, sub.ig = FALSE, maf.filt = 0.05, 
+                 prediction.model = NULL,
+                 make.ig = TRUE, sub.ig = FALSE, maf.filt = 0.05, 
                  julia.path = "julia", runID = "r1", qtl_only = FALSE,
                  pass.resid = NULL, pass.var = NULL, 
-                 ntree = 500,
+                 ntree = 100000,
+                 mtry = .1,
                  null.tree = 100,
                  boot.ntree = 500,
+                 h = NULL,
                  standardize = FALSE,
                  save.meta = TRUE){
-  
   #============sanity checks================================
-  # check that all of the required arguments are provided for the model we are running
-  if(method %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "RF")){
+  # check that all of the required arguments are provided for the prediction.model we are running
+  if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger")){
     
     # JWAS checks
-    if(method == "JWAS"){
+    if(prediction.program == "JWAS"){
       # chain length and burnin
       if(!is.numeric(c(chain_length, burnin))){
         stop("Chain_length and burnin must be numeric values.")
@@ -637,25 +814,36 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
         stop("Invalid path to julia executable.")
       }
       
-      # JWAS model-for now, only RR-BLUP.
-      if(!model %in% c("RR-BLUP")){
-        stop("Invalid JWAS model.")
+      # JWAS prediction.model-for now, only RR-BLUP.
+      if(!prediction.model %in% c("RR-BLUP")){
+        stop("Invalid JWAS prediction.model.")
       }
+      
+      # check that there is prior info to pass if pass resid is ture
+      if((pass.resid != FALSE | pass.var != FALSE) & !is.null(effect.sizes)){
+        stop("Marker effect sizes must be defined in order to pass prior residual and variance info to JWAS.")
+      }
+      
     }
     
     # BGLR checks:
-    else if(method == "BGLR"){
+    else if(prediction.program == "BGLR"){
       # chain length and burnin
       if(!is.numeric(c(chain_length, burnin))){
         stop("Chain_length and burnin must be numeric values.")
       }
+      
+      # check for accepted prediction.model.
+      if(!prediction.model %in% c("BRR", "FIXED", "BayesA", "BayesB", "BayesC", "BL")){
+        stop(paste0("prediction.model ", prediction.model, " not recognized by BGLR. Options: BRR, FIXED, BayesA-C, BL.\n"))
+      }
     }
     
     # random forest
-    else if(method == "RF"){
-      # model
-      if(!(model %in% c("RF", "RJ"))){
-        stop("For random forest, the model must be RF (random forest) or RJ (random jungle).")
+    else if(prediction.program == "ranger"){
+      # prediction.model
+      if(!(prediction.model %in% c("RJ"))){
+        stop("For random forest, the prediction.model must be RJ (random jungle) for now.")
       }
       
       # ntree
@@ -665,6 +853,11 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
       if(ntree != floor(ntree)){
         stop("ntree must be an integer!")
       }
+      
+      if(mtry > 1 | mtry < 0){
+        stop("mtry must be between 1 and 0.\n")
+      }
+      
       
       # null distribution checks
       # if doing a null:
@@ -693,7 +886,27 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
     
   }
   else{
-    stop("Invalid method provided. Options: JWAS, BGLR, PLINK, TASSEL, or RF.")
+    stop("Invalid prediction.program provided. Options: JWAS, BGLR, PLINK, TASSEL, or ranger.")
+  }
+  
+  
+  # check that we are either provided with input marker effects or with input phenotypes
+  if(all(c(is.null(phenotypes), is.null(effect.sizes)))){
+    stop("Individual phenotypes or marker effect sizes must be provided!")
+  }
+  else if(all(c(is.null(phenotypes), is.null(effect.sizes)))){
+    warning("Both phenotypes and marker effect sizes provided. Input phenotypes will be ignored!")
+  }
+  
+  # check that qtl_only filtering isn't requested if effect sizes aren't provided!
+  if(qtl_only & is.null(effect.sizes)){
+    stop("qtl_only filtering can only be performed if marker effect sizes are provieded.")
+  }
+  
+  if(!is.null(effect.sizes)){
+    if(!is.numeric(h)){
+      stop("h must be provided if effect.sizes are used.\n")
+    }
   }
   
   cat("Preparing model inputs...\n")
@@ -701,6 +914,7 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
   #============subfunctions=================================
   # do filters if requested
   filter_snps <- function(x, qtl_only, sub.ig, maf.filt, effect.sizes){
+     rejects <- numeric(nrow(meta)) # track rejected snps
     # qtl_only
     if(qtl_only){
       if(sub.ig != FALSE | maf.filt != FALSE){
@@ -709,15 +923,18 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
       s.markers <- which(effect.sizes != 0)
       x <- x[s.markers,]
       meta <- meta[s.markers,]
+      rejects[-s.markers] <- 1
     }
     
     # otherwise, other filters to check
     else{
       #filter low minor allele frequencies if requested (like many prediction studies will do!)
       if(maf.filt != FALSE){
-        m.keep <- matrixStats::rowSums2(x)/ncol(x) >= maf.filt
+        af <- matrixStats::rowSums2(x)/ncol(x)
+        m.keep <- af >= maf.filt & af <= (1-maf.filt)
         x <- x[m.keep,]
         meta <- meta[m.keep,]
+        rejects[-which(m.keep)] <- 1
       }
       
       #subset markers
@@ -726,25 +943,33 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
           s.markers <- sort(sample(nrow(x), sub.ig))
           x <- x[s.markers,]
           meta <- meta[s.markers,]
+          rejects[rejects != 1][-s.markers] <- 1
         }
         else{
           warning("Fewer markers than sub.ig. Running all markers.\n")
         }
       }
     }
-    return(list(x = x, meta = meta))
-  }
-  
-  # convert two column to one column genotypes and transpose
-  convert_1_to_2_column <- function(x){
-    ind.genos <- x[,seq(1,ncol(x), by = 2)] + x[,seq(2,ncol(x), by = 2)]
-    ind.genos <- matrix(ind.genos, nrow = ncol(x)/2, byrow = T) # rematrix and transpose!
-    return(ind.genos)
+    return(list(x = x, meta = meta, snp_ids = which(rejects == 0)))
   }
   
   
-  #============prepare directories and other things=========
-  r.ind.effects <- ind.effects # backup the ind effects.
+  #============prepare directories and phenotypes=========
+  if(!is.null(phenotypes)){
+    # if standardization is requested, set the mean phenoytpes to o and var(pheno) to 1
+    if(standardize){
+      phenotypes <- phenotypes/sd(phenotypes)
+      phenotypes <- phenotypes - mean(phenotypes)
+    }
+    r.ind.effects <- list(p = phenotypes) # backup the ind effects.
+  }
+  
+  # get phenotypes if effect sizes are provided.
+  if(!is.null(effect.sizes)){
+    phenotypes <- get.pheno.vals(x, effect.sizes, h = h, standardize = standardize)
+    r.ind.effects <- phenotypes
+    phenotypes <- phenotypes$p
+  }
   
   # create the directory to store results if it doesn't already exist and move over to it.
   if(!dir.exists(runID)){
@@ -754,58 +979,50 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
   setwd(runID)
   
   #============format data for prediction/GWAS==============
+  #filter:
+  x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
+  meta <- x$meta
+  kept.snps <- x$snp_ids
+  x <- x$x
   
-  if(method == "JWAS"){
+  
+  if(prediction.program == "JWAS"){
     # make an individual effect file.
-    ind.effects <- cbind(samp = as.character(1:500), phenotypes = ind.effects$p)
+    ind.effects <- cbind(samp = as.character(1:500), phenotypes = phenotypes)
     write.table(ind.effects, "ie.txt", quote = F, col.names = T, row.names = F)
     
     # make an individual genotype file if it isn't already constructed.
     if(make.ig){
-      #filter
-      x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
-      x <- x$meta
-      x <- x$x
-      
       # convert format
-      ind.genos <- convert_1_to_2_column(x)
+      ind.genos <- convert_2_to_1_column(x)
       ind.genos <- cbind(samp = 1:nrow(ind.genos), ind.genos) # add sample info
       colnames(ind.genos) <- c("samp", paste0("m", 1:(ncol(ind.genos)-1)))
       write.table(ind.genos, "ig.txt", quote = F, col.names = T, row.names = F)
     }
   }
   
-  else if(method == "BGLR"){
-    # filter
-    x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
-    meta <- x$meta
-    x <- x$x
-    
+  else if(prediction.program == "BGLR"){
     # convert
-    ind.genos <- convert_1_to_2_column(x) # rows are individuals, columns are SNPs
+    ind.genos <- convert_2_to_1_column(x) # rows are individuals, columns are SNPs
     colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
     rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
     
     # prepare ETA
-    ETA <- list(list(X = ind.genos, model = model, saveEffects = T))
+    ETA <- list(list(X = ind.genos, model = prediction.model, saveEffects = T))
   }
   
-  else if(method == "RF"){
-    x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
-    meta <- x$meta
-    x <- x$x
-    
-    t.x <- convert_1_to_2_column(x) # add sample info
+  else if(prediction.program == "ranger"){
+    t.x <- convert_2_to_1_column(x) # add sample info
     colnames(t.x) <- paste0("m", 1:ncol(t.x))
     
-    t.eff <- data.frame(phenotype = ind.effects$pheno, stringsAsFactors = F)
+    t.eff <- data.frame(phenotype = phenotypes, stringsAsFactors = F)
     t.eff <- cbind(t.eff, t.x)
   }
   
   
   #=========run genomic prediction or GWAS and return results==========
   # for JWAS:
-  if(method == "JWAS"){
+  if(prediction.program == "JWAS"){
     cat("Calling JWAS.\n")
     options(scipen = 999)
     julia.call <- paste0(julia.path, " ", owd, "/analysis.jl ", chain_length, " ", burnin)
@@ -824,7 +1041,7 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
     else{
       gv <- 1
     }
-    julia.call <- paste0(julia.call, " ", rv, " ", gv, " ", model)
+    julia.call <- paste0(julia.call, " ", rv, " ", gv, " ", prediction.model)
     system(julia.call)
     
     #=========grab output and modify it to give the estimated effect size per locus=============
@@ -838,13 +1055,13 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
     
     setwd(owd)
     
-    return(list(x = x, e.eff = e.eff, a.eff = r.ind.effects, meta = meta, h = as.numeric(h)))
+    return(list(x = x, e.eff = e.eff, phenotypes = r.ind.effects, meta = meta, h = as.numeric(h), kept.snps = kept.snps))
   }
   
   # for BGLR:
-  else if(method == "BGLR"){
+  else if(prediction.program == "BGLR"){
     cat("Calling BGLR.\n")
-    BGLR_mod <- BGLR::BGLR(y = ind.effects$pheno, ETA = ETA, nIter = chain_length, burnIn = burnin, thin = thin)
+    BGLR_mod <- BGLR::BGLR(y = phenotypes, ETA = ETA, nIter = chain_length, burnIn = burnin, thin = thin)
     
     # grab h2 estimate
     B <- BGLR::readBinMat('ETA_1_b.bin')
@@ -854,7 +1071,7 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
     for(i in 1:length(h2)){
       u <- ind.genos%*%B[i,]	
       varU[i] <- var(u)
-      varE[i] <- var(ind.effects$pheno-u)
+      varE[i] <- var(phenotypes-u)
       h2[i] <- varU[i]/(varU[i] + varE[i])
     }
     h2 <- mean(h2)
@@ -868,18 +1085,25 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
     }
     
     setwd(owd)
-    return(list(x = x, e.eff = e.eff, a.eff = r.ind.effects, meta = meta, h = h2))
+    return(list(x = x, e.eff = e.eff, phenotypes = r.ind.effects, meta = meta, h = h2, prediction.program = "BGLR",
+                prediction.model = prediction.model, output.model = list(mod = BGLR_mod, data = ETA), kept.snps = kept.snps))
   }
   
   # for randomForest
-  else if(method == "RF"){
+  else if(prediction.program == "ranger"){
     cat("Running randomforest (ranger rj implementaiton).\n")
+    
+    # figure out the mtry to use
+    mtry <- nrow(x)*mtry
+    
     # run the randomForest/jungle
     if(ncol(t.eff) - 1 >= 10000){
-      rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff, num.trees = ntree, importance = "impurity", verbose = T, save.memory = T)
+      rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff, mtry = mtry, 
+                           num.trees = ntree, importance = "impurity", verbose = T, save.memory = T)
     }
     else{
-      rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff, num.trees = ntree, importance = "impurity", verbose = T)
+      rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff,
+                           mtry = mtry, num.trees = ntree, importance = "impurity", verbose = T)
     }
     
     # if using a null distribution to scale importance values, do that:
@@ -893,7 +1117,7 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
         null.dat <- matrix(sample(t.eff$phenotype, null.tree*length(t.eff$phenotype), replace = T), 
                            nrow = nrow(t.x), ncol = null.tree) # permuted phenotypes.
         
-        # initialize null distribution storage and run simulations for RF and RJ
+        # initialize null distribution storage and run simulations for ranger
         null.mat <- matrix(0, null.tree, nrow(x)) # output. rows are simulations, columns are SNPs
         
         cat(paste0("Generating null distribution of size ", null.tree, ".\n\trep: 1\n"))
@@ -912,7 +1136,11 @@ pred <- function(x, effect.sizes, ind.effects, chr.length = 10000000,
       p1 <- 1 - (rowSums(rj$variable.importance > t(null.mat))/null.size)
       rj$bootstrap.pval <- p1
     }
-    return(list(x = x, rj = rj, a.eff = r.ind.effects, meta = meta))
+    return(list(x = x, phenotypes = r.ind.effects, meta = meta, prediction.program = "ranger",
+                prediction.model = "RJ", output.model = list(model = rj), kept.snps = kept.snps))
   }
 }
+
+
+
 
