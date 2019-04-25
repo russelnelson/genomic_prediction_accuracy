@@ -63,6 +63,11 @@ if(effect.dist == "fixed.n.normal"){
   effect.dist.func <- effect.dist.func.fn
 }
 
+#recombination distribution, Poission with one expected recombination event per chr.
+rec.dist <- function(x){
+  return(rpois(x, lambda = 1))
+}
+
 #========================source scripts===============================
 .libPaths(c(.libPaths(), "/home/hemstrow/R/x86_64-pc-linux-gnu-library/3.4", "/usr/local/lib/R/site-library", "/usr/lib/R/site-library", "/usr/lib/R/library", "/share/apps/rmodules"))
 library(methods); library(data.table)
@@ -97,7 +102,7 @@ pred_vals <- pred(x = as.matrix(ch1),
                   prediction.model = "BayesB",
                   make.ig = make.ig,
                   sub.ig = F,
-                  maf.filt = maf, 
+                  maf.filt = 0.05, 
                   runID = runID, 
                   chain_length = 5000, 
                   burnin = 1000, 
@@ -106,36 +111,122 @@ pred_vals <- pred(x = as.matrix(ch1),
                   save.meta = save.meta)
 
 
+# Effect comparison
+## effect sizes
+effect.comp <- data.frame(position = ch1.meta$position, 
+                          actual = ch1.meta$effect, 
+                          predicted = pred_vals$e.eff$V2,
+                          importance = ch1.meta$effect*(rowSums(ch1)/ncol(ch1)))
+effect.comp <- reshape2::melt(effect.comp, id.vars = "position")
+colnames(effect.comp)[2:3] <- c("source", "effect")
+ggplot(effect.comp, aes(x = position, y = log(effect^2), color = source)) + geom_point() + theme_bw()
 
-# compare prediction to results
+## individual genetic variance
+ae <- pred.BV.from.model(pred_vals$output.model$mod, ch1, pred.method = "model", model.source = "BGLR", h = pred_vals$h)
+a.comp <- data.frame(individual = 1:ncol(ch1), ae = ae$a, ar = phenos$a)
+a.comp <- reshape2::melt(a.comp, id.vars = "individual")
+colnames(a.comp)[2:3] <- c("source", "a")
+ggplot(a.comp, aes(x = a)) + geom_histogram() + facet_wrap(~source, ncol = 1) + theme_bw()
+plot(ae$a, phenos$a)
 
-var_test <- matrix(NA, nrow = trials, ncol = 4)
-BVs <- array(NA, dim = c(trials, ncol(ch1)/2, 2))
+
+
+# attempt to use PCA to adjust the invidual variance distribution to be closer to the real data
+## do a PCA on the raw data
+# PCA <- prcomp(t(ch1))
+# res <- summary(PCA)
+# plot(res$importance[2,])
+# plot(PCA$rotation[,1])
+
+mafs <- rowSums(ch1)/ncol(ch1)
+mafs[mafs > 0.5] <- 1 - mafs[mafs > 0.5]
+maf.ch1 <- ch1[mafs >= 0.05,]
+
+scor <- cor(t(maf.ch1))
+e <- RSpectra::eigs_sym(scor, ncol(maf.ch1))
+
+
+## get the lumps and their effects
+#new.loadings <- t(t(e$vectors)/rowSums(abs(e$vectors)))
+new.loadings <- e$vectors
+new.scores <- pred_vals$e.eff$V2 * new.loadings # the rotation is are the loadings/eigen vectors, and contain the imporatance of each loci to the 1000 lumps.
+new.scores <- colSums(new.scores) # these are the "lumps" with their effects
+
+## get "genotypes" for gcs at lumps
+lump.genos <- matrix(0, length(new.scores), ncol(ch1))
+for(i in 1:ncol(ch1)){
+  lump.genos[,i] <- colSums(maf.ch1[,i] * new.loadings)
+}
+new.a <- colSums(new.scores * lump.genos)
+old.a <- colSums(ch1.meta$effect * ch1)
+pred.a <- colSums(pred_vals$e.eff$V2 * pred_vals$x)
+plot(pred.a, new.a) # well correlated with the old a
+plot(old.a, new.a) # well correlated with the true a
+
+
+## function to lump genos and get a
+lump_and_bv <- function(genos, scores, loadings){
+  lump.genos <- data.table::as.data.table(matrix(0, length(scores), ncol(genos)))
+  genos <- data.table::as.data.table(genos)
+  for(i in 1:ncol(genos)){
+    set(lump.genos, j = as.integer(i), value = colSums(unlist(genos[,..i]) * loadings))
+  }
+  a <- colSums(scores * lump.genos)
+  BV <- a[seq(1, length(a), by = 2)] +
+    a[seq(2, length(a), by = 2)]
+  return(BV)
+}
+
+
+
+
+# over a few generations, compare the variance with recombination
+trials <- 5
+
+var_test <- matrix(NA, nrow = trials, ncol = 7)
+colnames(var_test) <- c("gen", "var_BV", "var_eBV", "var_pcaBV",
+                        "cor_BV_eBV", "cor_BV_pcaBV", "cor_eBV_pcaBV")
+BVs <- array(NA, dim = c(trials, ncol(ch1)/2, 3))
 var_test[,1] <- 1:trials
 recom <- ch1
 
 for(i in 1:trials){
   print(i)
+  # true bv
   BVs[i,,1] <- get.pheno.vals(recom, ch1.meta$effect, h)$a
   var_test[i,2] <- var(BVs[i,,1])
-  BVs[i,,2] <- pred.BV.from.model(pred_vals$output.model$mod, recom, "model", "BGLR", pred_vals$h, h.av = "fgen")$a
+  
+  # keep the correct values
+  maf.recom <- recom[pred_vals$kept.snps,]
+  
+  # estimated bv
+  BVs[i,,2] <- pred.BV.from.model(pred_vals$output.model$mod, maf.recom, "model", "BGLR", pred_vals$h, h.av = "fgen")$a
   var_test[i,3] <- var(BVs[i,,2])
-  var_test[i,4] <- cor(BVs[i,,1], BVs[i,,2])
+  var_test[i,5] <- cor(BVs[i,,1], BVs[i,,2])
+  
+  # pca bv
+  
+  BVs[i,,3] <- lump_and_bv(maf.recom, new.scores, new.loadings)
+  var_test[i, 4] <- var(BVs[i,,3])
+  var_test[i, 6] <- cor(BVs[i,,1], BVs[i,,3])
+  var_test[i, 7] <- cor(BVs[i,,2], BVs[i,,3])
+  
   if(i != nrow(var_test)){
-    recom <- recom[,sample(1:ncol(x), ncol(x), replace = F)]
-    # recom <- rand.mating(recom, ncol(recom)/2, ch1.meta, function(x) return(rep(0, length = length(x))),
-    #                      chrl, T, facet = "group")
+    recom <- rand.mating(recom, ncol(recom)/2, ch1.meta, rec.dist = rec.dist,
+                         chrl, T, facet = "group")
   }
-  gc();gc();gc()
+  
+  gc();gc();gc();gc();gc()
 }
 
-colnames(var_test) <- c("gen", "real", "predicted", "correlation")
 library(reshape2)
 m_var_test <- melt(as.data.frame(var_test), id.vars = "gen")
 colnames(m_var_test) <- c("gen", "model", "variance")
-result_plot <- ggplot(m_var_test, aes(x = gen, y = variance, color = model)) + geom_point() + theme_bw()
+result_plot <- ggplot(m_var_test, aes(x = gen, y = variance, color = model)) + geom_line() + theme_bw() + scale_color_viridis_d(option = "A")
+result_plot
 
-# save output
+outfile <- "./Tests/g_var_decline/g_var_decline_PCA_test.RDS"
+outplot <- "./Tests/g_var_decline/g_var_decline_PCA_test.pdf"
 saveRDS(list(var_tes = var_test, BVs = BVs), outfile)
 pdf(outplot)
 result_plot
@@ -143,15 +234,4 @@ result_plot
 dev.off() 
 dev.off()
 
-
-
-
-
-
-# ok, need to bin effect sizes using this, then get a "genotype" for each individual on each bin. Doesn't need to be a discrete genotype, can be continuous.
-pca2 <- prcomp(t(ch1))
-out2 <- summary(pca2)
-plot(pca2$x[,1], pca2$x[,2])
-
-plot(out2$importance[2,])
-
+# actually worse than the vanilla approach!

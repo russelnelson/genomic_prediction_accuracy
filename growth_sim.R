@@ -104,7 +104,7 @@ B_L_t1_func <- function(g_var, e_var, omega, k, B, Ne, theta_var){
 # h: heritability estimate
 # h.av: historic genetic varaince, for prediction from effect sizes.
 # effect.sizes: marker effect sizes, for prediction from effect sizes.
-pred.BV.from.model <- function(pred.model, g, pred.method = NULL, model.source = NULL, h = NULL, h.av = NULL, effect.sizes = NULL){
+pred.BV.from.model <- function(pred.model, g, pred.method = NULL, model.source = NULL, h = NULL, h.av = "fgen", effect.sizes = NULL){
   if(pred.method == "effects"){
     pheno <- get.pheno.vals(g, effect.sizes, h, hist.a.var = h.av)
     a <- pheno$a #addative genetic values
