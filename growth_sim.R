@@ -785,13 +785,11 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
                  make.ig = TRUE, sub.ig = FALSE, maf.filt = 0.05, 
                  julia.path = "julia", runID = "r1", qtl_only = FALSE,
                  pass.resid = NULL, pass.var = NULL, 
-                 ntree = 100000,
-                 mtry = .1,
-                 null.tree = 100,
-                 boot.ntree = 500,
+                 ntree = 50000,
+                 mtry = 1,
                  h = NULL,
                  standardize = FALSE,
-                 save.meta = TRUE){
+                 save.meta = TRUE, par = NULL){
   #============sanity checks================================
   # check that all of the required arguments are provided for the prediction.model we are running
   if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger")){
@@ -839,7 +837,7 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
       }
     }
     
-    # random forest
+    # random forest checks:
     else if(prediction.program == "ranger"){
       # prediction.model
       if(!(prediction.model %in% c("RJ"))){
@@ -857,31 +855,6 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
       if(mtry > 1 | mtry < 0){
         stop("mtry must be between 1 and 0.\n")
       }
-      
-      
-      # null distribution checks
-      # if doing a null:
-      if(!is.null(null.tree)){
-        
-        # if it's not a matrix or array
-        if(!(is.matrix(null.tree) | is.array(null.tree))){
-          if(!is.numeric(null.tree)){
-            stop("null.tree must either be provided or an integer.")
-          }
-          if(null.tree != floor(null.tree)){
-            stop("null.tree must either be provided or an integer.")
-          }
-          else{
-            if(!is.numeric(boot.ntrees)){
-              stop("boot.ntrees must be an integer.")
-            }
-            if(boot.ntrees != floor(boot.ntrees)){
-              stop("boot.ntrees must be an integer.")
-            }
-          }
-        }
-      }
-      
     }
     
   }
@@ -1099,43 +1072,13 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
     # run the randomForest/jungle
     if(ncol(t.eff) - 1 >= 10000){
       rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff, mtry = mtry, 
-                           num.trees = ntree, importance = "impurity", verbose = T, save.memory = T)
+                           num.trees = ntree, importance = "permutation", verbose = T, save.memory = T, num.threads = par)
     }
     else{
       rj <- ranger::ranger(dependent.variable.name = "phenotype", data = t.eff,
-                           mtry = mtry, num.trees = ntree, importance = "impurity", verbose = T)
+                           mtry = mtry, num.trees = ntree, importance = "permutation", verbose = T, num.threads = par)
     }
     
-    # if using a null distribution to scale importance values, do that:
-    if(!is.null(null.tree)){
-      
-      # make a null distribution if not provided
-      # note, should only need to do this once for each input dataset (Ne, effect.size, seq res, ect), since the null dists should converge! Don't need to do one for each individual trial.
-      if(is.numeric(null.tree) & length(null.tree) == 1){
-        
-        # get bootstrapped phenotypes.
-        null.dat <- matrix(sample(t.eff$phenotype, null.tree*length(t.eff$phenotype), replace = T), 
-                           nrow = nrow(t.x), ncol = null.tree) # permuted phenotypes.
-        
-        # initialize null distribution storage and run simulations for ranger
-        null.mat <- matrix(0, null.tree, nrow(x)) # output. rows are simulations, columns are SNPs
-        
-        cat(paste0("Generating null distribution of size ", null.tree, ".\n\trep: 1\n"))
-        for(i in 1:null.tree){
-          if((i %% 10) == 0){cat("\t", i, ".\n")}
-          tdat <- as.data.frame(cbind(phenotype = null.dat[,i], t.x), stringsAsFactors = F)
-          trf <- ranger::ranger(phenotype ~ ., data = tdat, num.trees = boot.ntrees, importance = "impurity")
-          null.mat[i,] <- trf$variable.importance
-        }
-        
-        null.size <- null.tree
-      }
-      else{
-        null.size <- ncol(null.tree)
-      }
-      p1 <- 1 - (rowSums(rj$variable.importance > t(null.mat))/null.size)
-      rj$bootstrap.pval <- p1
-    }
     return(list(x = x, phenotypes = r.ind.effects, meta = meta, prediction.program = "ranger",
                 prediction.model = "RJ", output.model = list(model = rj), kept.snps = kept.snps))
   }
