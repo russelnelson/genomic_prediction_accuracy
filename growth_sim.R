@@ -1137,9 +1137,9 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
 #' @param x matrix. Input genotypes, SNPs as rows, columns as individuals. Genotypes formatted as 0,1,2 for the major homozygote, heterozygote, and minor homozygote, respectively.
 #' @param phenotypes numeric vector. Observed phenotypes, one per individual.
 #' @param iters numeric. Number of ABC permutations to run.
-#' @param pi_range numeric vector of length 2, default c(0, 0.999),. Range (min, max) of pi values to run.
-#' @param df_range numeric vector of length 2, default NULL. Range (min, max) of degrees of freedom values to run.
-#' @param scale_range numeric vector of length 2, default NULL. Range (min, max) of scale values to run.
+#' @param pi_func function, default function(x) rbeta(x, 25, 1). A distribution function for generating pi prior. Should take only one argument (n, the number of iters).
+#' @param df_func function, default NULL. A distribution function for generating df prior. Should take only one argument (n, the number of iters).numeric vector of length 2, default NULL. Range (min, max) of degrees of freedom values to run.
+#' @param scale_func function, default NULL. A distribution function for generating scale prior. Should take only one argument (n, the number of iters).numeric vector of length 2, default NULL. Range (min, max) of scale values to run.
 #' @param h numeric, default NULL. Heritability to use. Will take a range in the future.
 #' @param julia.path character, defualt "julia". File path to the julia executable, required for JWAS.
 #' @param chain_length numeric, default 100000. Length of the MCMC chains used in each step of the ABC.
@@ -1233,7 +1233,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   else{
     run_dfs <- rep(NA, iters)
   }
-  if(!is.null(scale_range)){
+  if(!is.null(scale_func)){
     run_scales <- scale_func(iters)
   }
   else{
