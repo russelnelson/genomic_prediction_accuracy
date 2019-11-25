@@ -140,6 +140,30 @@ pred.BV.from.model <- function(pred.model, g, pred.method = NULL, model.source =
 }
 
 
+#=======distribution functions=========
+#' Get random draws from the distribution used for bayesB regressions.
+#'
+#' Generate any number of random values drawn from the distribution used for
+#' bayesB genomic regressions.
+#'
+#' Under a bayesB model, the effect of each site is drawn from a distribution
+#' where var(g) == 0 with prob \emph{pi}, and is otherwise drawn from a scaled
+#' t distribution with degrees of freedom \emph{d.f} and scale
+#' \emph{scale}.
+#'
+#' @param n numeric. Number of draws to make from the distribution
+#' @param pi numeric. Probability that any one site has zero effect
+#' @param d.f numeric. Degrees of freedom for the scaled-inverse chi-squared
+#'   distribution
+#' @param scale numeric. Scale/shape parameter for the scaled-inverse
+#'   chi-squared distribution.
+rbayesB <- function(n, pi, d.f, scale){
+  effects <- rbinom(n, 1, 1 - pi) # these are non-zero
+  #effects[effects != 0] <- LaplacesDemon::rinvchisq(sum(effects), d.f, scale) # inverse chi distribution alternative
+  effects[effects != 0] <- scale * rt(sum(effects), d.f)
+  return(effects)
+}
+
 #=======function to do a single generation of random mating===========
 rand.mating <- function(x, N.next, meta, rec.dist, chr.length, do.sexes = TRUE, facet = "group"){
   if(!data.table::is.data.table(x)){
@@ -417,7 +441,6 @@ gs <- function(x,
   
   #================set up BV variation adjustment to correct for drop in variance from GP methods============
   if(adjust_phenotypes){
-    browser()
     reorg_gcs <- rand.mating(x, ncol(x)/2, meta, rec.dist, chr.length, do.sexes, facet) # reorganize chrs once, since this causes one heck of a drop in var(a) in some GP results
     reorg_gcs <- rand.mating(reorg_gcs, ncol(x)/2, meta, rec.dist, chr.length, do.sexes, facet)
     re_p <- pred.BV.from.model(pred.model = pred.mod, g = reorg_gcs, pred.method = pred.method,
@@ -776,20 +799,20 @@ init_pop <- function(x,
 #                a numeric value other than zero will fudge the variance number by up to the proportion given (1 fudges up to 100%).
 #    pass.var: NULL or numeric >= 0. Like pass.resid, but for the true genetic variance.
 #    standardize: Boolean. Should the addative genetic values be centered and scaled between -1 and 1 prior to entry into JWAS? Phenotypic values still won't be centered!
-pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 10000000,
+pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  prediction.program = "JWAS",
                  chain_length = 100000, 
-                 burnin = 50000,
+                 burnin = 5000,
                  thin = 100,
                  prediction.model = NULL,
                  make.ig = TRUE, sub.ig = FALSE, maf.filt = 0.05, 
                  julia.path = "julia", runID = "r1", qtl_only = FALSE,
-                 pass.resid = NULL, pass.var = NULL, 
+                 pass.resid = FALSE, pass.var = FALSE, 
                  ntree = 50000,
                  mtry = 1,
                  h = NULL,
                  standardize = FALSE,
-                 save.meta = TRUE, par = NULL){
+                 save.meta = TRUE, par = NULL, pi = NULL){
   #============sanity checks================================
   # check that all of the required arguments are provided for the prediction.model we are running
   if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger")){
@@ -813,7 +836,7 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
       }
       
       # JWAS prediction.model-for now, only RR-BLUP.
-      if(!prediction.model %in% c("RR-BLUP")){
+      if(!prediction.model %in% c("RR-BLUP", "BayesB")){
         stop("Invalid JWAS prediction.model.")
       }
       
@@ -882,12 +905,17 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
     }
   }
   
+  if(is.null(meta[1]) & save.meta){
+    save.meta <- F
+    warning("Since no SNP metadata provided, no SNP metadata will be saved.\n")
+  }
+  
   cat("Preparing model inputs...\n")
   
   #============subfunctions=================================
   # do filters if requested
   filter_snps <- function(x, qtl_only, sub.ig, maf.filt, effect.sizes){
-     rejects <- numeric(nrow(meta)) # track rejected snps
+    rejects <- numeric(nrow(x)) # track rejected snps
     # qtl_only
     if(qtl_only){
       if(sub.ig != FALSE | maf.filt != FALSE){
@@ -895,7 +923,6 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
       }
       s.markers <- which(effect.sizes != 0)
       x <- x[s.markers,]
-      meta <- meta[s.markers,]
       rejects[-s.markers] <- 1
     }
     
@@ -906,7 +933,6 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
         af <- matrixStats::rowSums2(x)/ncol(x)
         m.keep <- af >= maf.filt & af <= (1-maf.filt)
         x <- x[m.keep,]
-        meta <- meta[m.keep,]
         rejects[-which(m.keep)] <- 1
       }
       
@@ -915,7 +941,6 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
         if(nrow(x) > sub.ig){
           s.markers <- sort(sample(nrow(x), sub.ig))
           x <- x[s.markers,]
-          meta <- meta[s.markers,]
           rejects[rejects != 1][-s.markers] <- 1
         }
         else{
@@ -923,7 +948,7 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
         }
       }
     }
-    return(list(x = x, meta = meta, snp_ids = which(rejects == 0)))
+    return(list(x = x, snp_ids = which(rejects == 0)))
   }
   
   
@@ -954,8 +979,10 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
   #============format data for prediction/GWAS==============
   #filter:
   x <- filter_snps(x, qtl_only, sub.ig, maf.filt, effect.sizes)
-  meta <- x$meta
   kept.snps <- x$snp_ids
+  if(!is.null(meta)){
+    meta <- meta[kept.snps,]
+  }
   x <- x$x
   
   
@@ -970,7 +997,7 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
       ind.genos <- convert_2_to_1_column(x)
       ind.genos <- cbind(samp = 1:nrow(ind.genos), ind.genos) # add sample info
       colnames(ind.genos) <- c("samp", paste0("m", 1:(ncol(ind.genos)-1)))
-      write.table(ind.genos, "ig.txt", quote = F, col.names = T, row.names = F)
+      data.table::fwrite(ind.genos, "ig.txt", sep = " ", col.names = T)
     }
   }
   
@@ -1015,6 +1042,12 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
       gv <- 1
     }
     julia.call <- paste0(julia.call, " ", rv, " ", gv, " ", prediction.model)
+    if(!is.null(pi)){
+      julia.call <- paste0(julia.call, " ", pi)
+    }
+    else{
+      julia.call <- paste0(julia.call, " ", "false")
+    }
     system(julia.call)
     
     #=========grab output and modify it to give the estimated effect size per locus=============
@@ -1086,4 +1119,186 @@ pred <- function(x, meta, effect.sizes = NULL, phenotypes = NULL, chr.length = 1
 
 
 
+#=======function to do ABC on hyperparameters============
+#' Conduct an ABC on a range of effect size distribution hyperparameters
+#' 
+#' Runs Approximate Bayesian Computation across a range of marker effect size
+#' distribution hyperparameters using one of three different schemes in order to determine
+#' the hyperparamters that generate a distribution most like the real genomic architecture of the trait.
+#' 
+#' ABC schemes: \itemize{
+#'     \item{"A": }{Genomic Data -> prediction with prior hyperparameters -> compare predicted phenotypes to real phenotypes.}
+#'     \item{"B": }{Genomic Data -> generate psuedo marker effects using distribution with prior hyperparameters -> prediction with defaults -> compare predicted phenotypes to real phenotypes.}
+#'     \item{"C": }{Part 1: Genomic Data -> generate psuedo marker effects using distribution with prior hyperparameters -> "pseudo" predicted marker effects. 
+#'                  Part 2: Genomic Data -> prediction with defaults -> direct estimated marker effects.
+#'                  Part 3: Compare direct to "pseudo" estimated marker effects.}
+#' }
+#' 
+#' @param x matrix. Input genotypes, SNPs as rows, columns as individuals. Genotypes formatted as 0,1,2 for the major homozygote, heterozygote, and minor homozygote, respectively.
+#' @param phenotypes numeric vector. Observed phenotypes, one per individual.
+#' @param iters numeric. Number of ABC permutations to run.
+#' @param pi_range numeric vector of length 2, default c(0, 0.999),. Range (min, max) of pi values to run.
+#' @param df_range numeric vector of length 2, default NULL. Range (min, max) of degrees of freedom values to run.
+#' @param scale_range numeric vector of length 2, default NULL. Range (min, max) of scale values to run.
+#' @param h numeric, default NULL. Heritability to use. Will take a range in the future.
+#' @param julia.path character, defualt "julia". File path to the julia executable, required for JWAS.
+#' @param chain_length numeric, default 100000. Length of the MCMC chains used in each step of the ABC.
+#' @param burnin numeric, default 5000. Number of MCMC chain steps discarded at the start of each MCMC.
+#' @param thin numeric, default 100. Number of MCMC chain steps discarded between each sample used to form the posterior.
+#' @param method character, default "bayesB". The marker effect size distribution/prediction method to use.
+#' @param ABC_scheme character, default "A". The ABC_scheme to use. See details.
+#' @param par numeric or FALSE, default FALSE. If numeric, the number of cores on which to run the ABC. 
+ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) rbeta(x, 25, 1), 
+                                   df_func = NULL,  scale_func = NULL, h = NULL,
+                                   julia.path = "julia", chain_length = 100000, 
+                                   burnin = 5000,
+                                   thin = 100, method = "BayesB", ABC_scheme = "A", par = F){
 
+  #============general subfunctions=========================
+  euclid.dist <- function(p, o){
+    dist <- sqrt((o - p)^2)
+    return(dist)
+  }
+  euclid.distribution.dist <- function(p, o){
+    dist <- ks.test(p, o)$statistic
+    return(dist)
+  }
+  generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL){
+    if(method == "BayesB"){
+      pseudo_effects <- rbayesB(nrow(x), pi, df, scale)
+      pseudo_phenos <- get.pheno.vals(x, pseudo_effects, h)$p
+    }
+    return(list(e = pseudo_effects, p = pseudo_phenos))
+  }
+  
+  #============ABC_scheme functions for one rep=============
+  scheme_A <- function(x, phenotypes, pi, method, t_iter){
+    p <- pred(x, pi = pi, phenotypes = phenotypes, julia.path = julia.path, 
+              burnin = burnin, thin = thin, chain_length = chain_length,
+              prediction.program = "JWAS", prediction.model = method, runID = t_iter)
+    
+    dist <- euclid.dist(p$est.phenos, phenotypes)
+    return(dist)
+  }
+  scheme_B <- function(x, phenotypes, pi, df, scale, method, t_iter){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+    
+    p <- pred(x, phenotypes = pseudo$p,
+              burnin = burnin, thin = thin, chain_length = chain_length,  
+              prediction.program = "BGLR", prediction.model = method, runID = t_iter)
+    
+    p.phenos <- as.vector(convert_2_to_1_column(p$x)%*%p$output.model$mod$ETA[[1]]$b)
+    
+    dist <- euclid.distribution.dist(p.phenos, phenotypes)
+    return(dist)
+  }
+  scheme_C <- function(x, phenotypes, pi, df, scale, method, t_iter){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+    
+    real.pred <- pred(x, phenotypes = phenotypes,
+                      burnin = burnin, thin = thin, chain_length = chain_length,  
+                      prediction.program = "BGLR", prediction.model = method, runID = paste0(t_iter, "_real"))
+    
+    pseudo.pred <-pred(x, phenotypes = pseudo$p,
+                       burnin = burnin, thin = thin, chain_length = chain_length,  
+                       prediction.program = "BGLR", prediction.model = method,
+                       runID = paste0(t_iter, "_pseudo"))
+    
+    p.p.phenos <- as.vector(convert_2_to_1_column(pseudo.pred$x)%*%pseudo.pred$output.model$mod$ETA[[1]]$b)
+    r.p.phenos <- as.vector(convert_2_to_1_column(real.pred$x)%*%real.pred$output.model$mod$ETA[[1]]$b)
+    
+    dist <- euclid.distribution.dist(r.p.phenos, p.p.phenos)
+    return(dist)
+  }
+  
+  loop_func <- function(x, phenotypes, pi, df, scale, method, scheme, t_iter){
+    if(scheme == "A"){
+      dist <- scheme_A(x, phenotypes, pi, method, t_iter)
+    }
+    else if(scheme == "B"){
+      dist <- scheme_B(x, phenotypes, pi, df, scale, method, t_iter)
+    }
+    else if(scheme == "C"){
+      dist <- scheme_C(x, phenotypes, pi, df, scale, method, t_iter)
+    }
+    return(dist)
+  }
+  
+  #============ABC loop======================================
+  # get the random values to run
+  run_pis <- pi_func(iters)
+  if(!is.null(df_func)){
+    run_dfs <- df_func(iters)
+  }
+  else{
+    run_dfs <- rep(NA, iters)
+  }
+  if(!is.null(scale_range)){
+    run_scales <- scale_func(iters)
+  }
+  else{
+    run_scales <- rep(NA, iters)
+  }
+  
+  
+  # initialize storage
+  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, dist = 0)
+  
+  # run the ABC
+  ## serial
+  if(par == F){
+    for(i in 1:iters){
+      cat("Iter: ", i, ".\n")
+      out[i,"dist"] <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, i)
+    }
+  }
+  # parallel
+  else{
+    parms <- out[,-ncol(out)]
+    cl <- snow::makeSOCKcluster(par)
+    doSNOW::registerDoSNOW(cl)
+    
+    # prepare reporting function
+    progress <- function(n) cat(sprintf("Iter %d out of", n), iters, "is complete.\n")
+    opts <- list(progress=progress)
+
+    # loop through each set of facets
+    output <- foreach::foreach(i = 1:iters, .inorder = FALSE,
+                               .options.snow = opts, 
+                               .export = c("rbayesB", "get.pheno.vals", "e.dist.func", "pred", 
+                                           "convert_2_to_1_column"),
+                               .noexport = "weighted.colSums") %dopar% {
+                                 
+                                 # remake the weighted.colSums function...
+                                 src <- '
+                                  Rcpp::NumericMatrix dataR(data);
+                                  Rcpp::NumericVector weightsR(weights);
+                                  int ncol = dataR.ncol();
+                                  Rcpp::NumericVector sumR(ncol);
+                                  for (int col = 0; col<ncol; col++){
+                                  sumR[col] = Rcpp::sum(dataR( _, col)*weightsR);
+                                  }
+                                  return Rcpp::wrap(sumR);'
+                                 
+                                 weighted.colSums <- inline::cxxfunction(
+                                   signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
+                                 
+                                 # get the distance
+                                 dist <- loop_func(x, phenotypes, parms[i,"pi"], parms[i,"df"], parms[i,"scale"], method, ABC_scheme, i)
+                                 dist <- matrix(c(parms[i,], dist = dist), nrow = 1)
+                                 colnames(dist) <- c(colnames(parms), "dist")
+                                 dist
+                               }
+    
+    # release cores and clean up
+    parallel::stopCluster(cl)
+    doSNOW::registerDoSNOW()
+    gc();gc()
+    
+    # bind
+    browser()
+    out <- dplyr::bind_rows(output)
+  }
+
+  return(out)
+}
