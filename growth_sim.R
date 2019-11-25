@@ -812,7 +812,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  mtry = 1,
                  h = NULL,
                  standardize = FALSE,
-                 save.meta = TRUE, par = NULL, pi = NULL){
+                 save.meta = TRUE, par = NULL, pi = NULL, verbose = T){
   #============sanity checks================================
   # check that all of the required arguments are provided for the prediction.model we are running
   if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger")){
@@ -1067,7 +1067,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
   # for BGLR:
   else if(prediction.program == "BGLR"){
     cat("Calling BGLR.\n")
-    BGLR_mod <- BGLR::BGLR(y = phenotypes, ETA = ETA, nIter = chain_length, burnIn = burnin, thin = thin)
+    BGLR_mod <- BGLR::BGLR(y = phenotypes, ETA = ETA, nIter = chain_length, burnIn = burnin, thin = thin, verbose = verbose)
     
     # grab h2 estimate
     B <- BGLR::readBinMat('ETA_1_b.bin')
@@ -1147,12 +1147,14 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
 #' @param thin numeric, default 100. Number of MCMC chain steps discarded between each sample used to form the posterior.
 #' @param method character, default "bayesB". The marker effect size distribution/prediction method to use.
 #' @param ABC_scheme character, default "A". The ABC_scheme to use. See details.
-#' @param par numeric or FALSE, default FALSE. If numeric, the number of cores on which to run the ABC. 
+#' @param par numeric or FALSE, default FALSE. If numeric, the number of cores on which to run the ABC.
+#' @param run_number numeric, default NULL. Controls how the itermediate output directories are named. If numeric, will be named for the number, otherwise, will be named for the iteration.
 ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) rbeta(x, 25, 1), 
                                    df_func = NULL,  scale_func = NULL, h = NULL,
                                    julia.path = "julia", chain_length = 100000, 
                                    burnin = 5000,
-                                   thin = 100, method = "BayesB", ABC_scheme = "A", par = F){
+                                   thin = 100, method = "BayesB", ABC_scheme = "A", 
+                                   par = F, run_number = NULL){
 
   #============general subfunctions=========================
   euclid.dist <- function(p, o){
@@ -1249,7 +1251,9 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   if(par == F){
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
-      out[i,"dist"] <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, i)
+      if(is.numeric(run_number)){rn <- run_number}
+      else{rn <- i}
+      out[i,"dist"] <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, rn)
     }
   }
   # parallel
@@ -1283,8 +1287,12 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                  weighted.colSums <- inline::cxxfunction(
                                    signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
                                  
+                                 
+                                 if(is.numeric(run_number)){rn <- run_number}
+                                 else{rn<- i}
+                                 
                                  # get the distance
-                                 dist <- loop_func(x, phenotypes, parms[i,"pi"], parms[i,"df"], parms[i,"scale"], method, ABC_scheme, i)
+                                 dist <- loop_func(x, phenotypes, parms[i,"pi"], parms[i,"df"], parms[i,"scale"], method, ABC_scheme, rn)
                                  dist <- matrix(c(parms[i,], dist = dist), nrow = 1)
                                  colnames(dist) <- c(colnames(parms), "dist")
                                  dist
