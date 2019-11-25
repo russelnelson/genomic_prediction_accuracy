@@ -59,4 +59,4 @@ ABC_res <- ABC_on_hyperparameters(x, phenos$p, iters = 1, pi_func = pi_func,
 
 
 # save
-write.table(ABC_res, paste0("./", runID, "_dist.txt"), sep = "\t", quote = F, col.names = F)
+write.table(ABC_res, paste0("./", outname, "_", runID, "_dist.txt"), sep = "\t", quote = F, col.names = F)
