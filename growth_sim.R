@@ -1177,7 +1177,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   scheme_A <- function(x, phenotypes, pi, method, t_iter){
     p <- pred(x, pi = pi, phenotypes = phenotypes, julia.path = julia.path, 
               burnin = burnin, thin = thin, chain_length = chain_length,
-              prediction.program = "JWAS", prediction.model = method, runID = t_iter)
+              prediction.program = "JWAS", prediction.model = method, runID = t_iter, verbose = F)
     
     dist <- euclid.dist(p$est.phenos, phenotypes)
     return(dist)
@@ -1187,7 +1187,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     
     p <- pred(x, phenotypes = pseudo$p,
               burnin = burnin, thin = thin, chain_length = chain_length,  
-              prediction.program = "BGLR", prediction.model = method, runID = t_iter)
+              prediction.program = "BGLR", prediction.model = method, runID = t_iter, verbose = F)
     
     p.phenos <- as.vector(convert_2_to_1_column(p$x)%*%p$output.model$mod$ETA[[1]]$b)
     
@@ -1197,14 +1197,16 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   scheme_C <- function(x, phenotypes, pi, df, scale, method, t_iter){
     pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
     
+    cat("Beginning real data ", method, "run.\n")
     real.pred <- pred(x, phenotypes = phenotypes,
                       burnin = burnin, thin = thin, chain_length = chain_length,  
-                      prediction.program = "BGLR", prediction.model = method, runID = paste0(t_iter, "_real"))
+                      prediction.program = "BGLR", prediction.model = method, runID = paste0(t_iter, "_real"), verbose = F)
     
+    cat("Beginning pseudo data ", method, "run.\n")
     pseudo.pred <-pred(x, phenotypes = pseudo$p,
                        burnin = burnin, thin = thin, chain_length = chain_length,  
                        prediction.program = "BGLR", prediction.model = method,
-                       runID = paste0(t_iter, "_pseudo"))
+                       runID = paste0(t_iter, "_pseudo"), verbose = F)
     
     p.p.phenos <- as.vector(convert_2_to_1_column(pseudo.pred$x)%*%pseudo.pred$output.model$mod$ETA[[1]]$b)
     r.p.phenos <- as.vector(convert_2_to_1_column(real.pred$x)%*%real.pred$output.model$mod$ETA[[1]]$b)
