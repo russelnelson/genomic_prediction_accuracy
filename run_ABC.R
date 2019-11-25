@@ -1,6 +1,4 @@
 args <- commandArgs(TRUE)
-library(doParallel)
-
 x <- as.character(args[1])
 outname <- as.character(args[2])
 run_n <- as.character(args[3])
@@ -36,7 +34,7 @@ scale_func <- function(x) runif(x, 1, 1)
 .libPaths(c(.libPaths(), "/home/hemstrow/R/x86_64-pc-linux-gnu-library/3.4", "/usr/local/lib/R/site-library", "/usr/lib/R/site-library", "/usr/lib/R/library", "/share/apps/rmodules"))
 library(methods); library(data.table)
 
-source("growth_sim.R")
+source("~/coalescence/prediction_accuracy/genomic_prediction_accuracy/growth_sim.R")
 
 #========================read in genomic data, assign effects, run ABC======
 
