@@ -969,12 +969,12 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     phenotypes <- phenotypes$p
   }
   
-  # create the directory to store results if it doesn't already exist and move over to it.
-  if(!dir.exists(runID)){
-    dir.create(runID)
-  }
-  owd <- getwd()
-  setwd(runID)
+  # # create the directory to store results if it doesn't already exist and move over to it.
+  # if(!dir.exists(runID)){
+  #   dir.create(runID)
+  # }
+  # owd <- getwd()
+  # setwd(runID)
   
   #============format data for prediction/GWAS==============
   #filter:
@@ -1059,7 +1059,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
       write.table(meta, "est_meta.txt", sep = "\t", quote = F, col.names = T, row.names = F)
     }
     
-    setwd(owd)
+    # setwd(owd)
     
     return(list(x = x, e.eff = e.eff, phenotypes = r.ind.effects, meta = meta, h = as.numeric(h), kept.snps = kept.snps))
   }
@@ -1090,7 +1090,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
       write.table(meta, "est_meta.txt", sep = "\t", quote = F, col.names = T, row.names = F)
     }
     
-    setwd(owd)
+    # setwd(owd)
     return(list(x = x, e.eff = e.eff, phenotypes = r.ind.effects, meta = meta, h = h2, prediction.program = "BGLR",
                 prediction.model = prediction.model, output.model = list(mod = BGLR_mod, data = ETA), kept.snps = kept.snps))
   }
