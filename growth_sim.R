@@ -1197,12 +1197,12 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   scheme_C <- function(x, phenotypes, pi, df, scale, method, t_iter){
     pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
     
-    cat("Beginning real data ", method, "run.\n")
+    cat("Beginning real data", method, "run.\n")
     real.pred <- pred(x, phenotypes = phenotypes,
                       burnin = burnin, thin = thin, chain_length = chain_length,  
                       prediction.program = "BGLR", prediction.model = method, runID = paste0(t_iter, "_real"), verbose = F)
     
-    cat("Beginning pseudo data ", method, "run.\n")
+    cat("Beginning pseudo data", method, "run.\n")
     pseudo.pred <-pred(x, phenotypes = pseudo$p,
                        burnin = burnin, thin = thin, chain_length = chain_length,  
                        prediction.program = "BGLR", prediction.model = method,
@@ -1255,7 +1255,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
       cat("Iter: ", i, ".\n")
       if(is.numeric(run_number)){rn <- run_number}
       else{rn <- i}
-      out[i,"dist"] <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, rn)
+      out[i,"dist"] <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn)
     }
   }
   # parallel
