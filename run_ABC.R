@@ -1,11 +1,9 @@
 args <- commandArgs(TRUE)
 x <- as.character(args[1])
 outname <- as.character(args[2])
-run_n <- as.character(args[3])
 
 # file and storage information:
-runID <- paste0("R_", run_n) # run ID and directory name where intermediate results will be stored. Will be created if needed.
-save.meta <- T # should we save the metadata file when doing prediction/GWAS
+save.meta <- F # should we save the metadata file when doing prediction/GWAS
 
 # genome information
 chrl <- 10000000 # chromosome length CURRENTLY MUST BE THE SAME ACROSS ALL CHRs
@@ -25,8 +23,8 @@ thin <- 100
 
 # ABC params
 ## priors
-pi_func <- function(x) rbeta(x, 25, 1)
-df_func <- function(x) runif(x, 3, 7)
+pi_func <- function(x) runif(x, .7, 1)
+df_func <- function(x) runif(x, 2, 7)
 scale_func <- function(x) runif(x, 1, 1)
 
 #========================source scripts===============================
@@ -54,7 +52,7 @@ phenos <- get.pheno.vals(x, meta$effect, .75)
 # run
 ABC_res <- ABC_on_hyperparameters(x, phenos$p, iters = 1, pi_func = pi_func, 
                                df_func = df_func, scale_func = scale_func, ABC_scheme = "C",
-                               h = h, chain_length = chain_length, burnin = burnin, thin = thin, run_number = run_n)
+                               h = h, chain_length = 1000, burnin = 100, thin = 10)
 
 # save
-write.table(ABC_res, paste0("./", outname, "_", runID, "_dist.txt"), sep = "\t", quote = F, col.names = F, row.names = F)
+write.table(ABC_res, outname, sep = "\t", quote = F, col.names = F, row.names = F)
