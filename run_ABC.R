@@ -52,7 +52,7 @@ phenos <- get.pheno.vals(x, meta$effect, .75)
 # run
 ABC_res <- ABC_on_hyperparameters(x, phenos$p, iters = 1, pi_func = pi_func, 
                                df_func = df_func, scale_func = scale_func, ABC_scheme = "C",
-                               h = h, chain_length = 1000, burnin = 100, thin = 10)
+                               h = h, chain_length = chain_length, burnin = burnin, thin = thin)
 
 # save
 write.table(ABC_res, outname, sep = "\t", quote = F, col.names = F, row.names = F)
