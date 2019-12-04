@@ -1154,8 +1154,10 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                    julia.path = "julia", chain_length = 100000, 
                                    burnin = 5000,
                                    thin = 100, method = "BayesB", ABC_scheme = "A", 
-                                   par = F, run_number = NULL){
+                                   par = F, run_number = NULL, est_h = F){
 
+  
+  # ks <- which(matrixStats::rowSums2(x)/ncol(x) >= 0.05)
   #============general subfunctions=========================
   euclid.dist <- function(p, o){
     dist <- sqrt((o - p)^2)
@@ -1192,30 +1194,27 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     p.phenos <- as.vector(convert_2_to_1_column(p$x)%*%p$output.model$mod$ETA[[1]]$b)
     
     dist <- euclid.distribution.dist(p.phenos, phenotypes)
-    return(dist)
+    return(return(list(dist = dist, e = pseudo$e)))
   }
-  scheme_C <- function(x, phenotypes, pi, df, scale, method, t_iter){
+  scheme_C <- function(x, phenotypes, r.p.eff, pi, df, scale, method, t_iter){
     pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
-    
-    cat("Beginning real data", method, "run.\n")
-    real.pred <- pred(x, phenotypes = phenotypes,
-                      burnin = burnin, thin = thin, chain_length = chain_length,  
-                      prediction.program = "BGLR", prediction.model = method, runID = paste0(t_iter, "_real"), verbose = F)
-    
+  
     cat("Beginning pseudo data", method, "run.\n")
     pseudo.pred <-pred(x, phenotypes = pseudo$p,
                        burnin = burnin, thin = thin, chain_length = chain_length,  
                        prediction.program = "BGLR", prediction.model = method,
                        runID = paste0(t_iter, "_pseudo"), verbose = F)
     
-    p.p.phenos <- as.vector(convert_2_to_1_column(pseudo.pred$x)%*%pseudo.pred$output.model$mod$ETA[[1]]$b)
-    r.p.phenos <- as.vector(convert_2_to_1_column(real.pred$x)%*%real.pred$output.model$mod$ETA[[1]]$b)
-    
-    dist <- euclid.distribution.dist(r.p.phenos, p.p.phenos)
-    return(dist)
+    dist <- euclid.distribution.dist(r.p.eff, pseudo.pred$output.model$mod$ETA[[1]]$b)
+    return(list(dist = dist, e = pseudo$e))
+  }
+  scheme_D <- function(x, phenotypes, pi, df, scale, method){
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+    dist <- euclid.distribution.dist(phenotypes, pseudo$p)
+    return(list(dist = dist, e = pseudo$e))
   }
   
-  loop_func <- function(x, phenotypes, pi, df, scale, method, scheme, t_iter){
+  loop_func <- function(x, phenotypes, pi, df, scale, method, scheme, t_iter, r.p.phenos = NULL, r.p.eff = NULL){
     if(scheme == "A"){
       dist <- scheme_A(x, phenotypes, pi, method, t_iter)
     }
@@ -1223,7 +1222,10 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
       dist <- scheme_B(x, phenotypes, pi, df, scale, method, t_iter)
     }
     else if(scheme == "C"){
-      dist <- scheme_C(x, phenotypes, pi, df, scale, method, t_iter)
+      dist <- scheme_C(x, phenotypes, r.p.eff, pi, df, scale, method, t_iter)
+    }
+    else if(scheme == "D"){
+      dist <- scheme_D(x, phenotypes, pi, df, scale, method)
     }
     return(dist)
   }
@@ -1248,14 +1250,44 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   # initialize storage
   out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, dist = 0)
   
+  # if doing a method where prediction needs to be run on the real data ONCE, or if h should be estimated, do that now:
+  if(ABC_scheme == "C" | est_h == T){
+    cat("Beginning real data", method, "run.\n")
+    real.pred <- pred(x, phenotypes = phenotypes,
+                      burnin = burnin, thin = thin, chain_length = chain_length,  
+                      prediction.program = "BGLR", prediction.model = method, runID = "real_pred", verbose = F)
+    if(ABC_scheme == "C"){
+      #r.p.phenos <- as.vector(convert_2_to_1_column(real.pred$x)%*%real.pred$output.model$mod$ETA[[1]]$b)
+      r.p.phenos <- NULL
+      r.p.eff <- real.pred$output.model$mod$ETA[[1]]$b
+    }
+    if(est_h == T){
+      h <- real.pred$h
+    }
+    if(ABC_scheme != "C"){
+      rm(real.pred)
+      r.p.phenos <- NULL
+      r.p.eff <- NULL
+    }
+  }
+  else{
+    r.p.phenos <- NULL
+  }
+
   # run the ABC
   ## serial
   if(par == F){
+
+    # initialize effects storage
+    out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = iters))
+    
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
       if(is.numeric(run_number)){rn <- run_number}
       else{rn <- i}
-      out[i,"dist"] <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn)
+      tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff)
+      out[i,"dist"] <- tout$dist
+      data.table::set(out.effects, j = i,  value = tout$e)
     }
   }
   # parallel
@@ -1264,15 +1296,18 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     cl <- snow::makeSOCKcluster(par)
     doSNOW::registerDoSNOW(cl)
     
+    # divide up into ncore chunks
+    chunks <- split(as.data.frame(out), sample(1:par, nrow(out), replace=T))
+    
     # prepare reporting function
-    progress <- function(n) cat(sprintf("Iter %d out of", n), iters, "is complete.\n")
+    progress <- function(n) cat(sprintf("Chunk %d out of", n), par, "is complete.\n")
     opts <- list(progress=progress)
-
-    # loop through each set of facets
-    output <- foreach::foreach(i = 1:iters, .inorder = FALSE,
+    
+    
+    output <- foreach::foreach(i = 1:par, .inorder = FALSE,
                                .options.snow = opts, 
                                .export = c("rbayesB", "get.pheno.vals", "e.dist.func", "pred", 
-                                           "convert_2_to_1_column"),
+                                           "convert_2_to_1_column"), .packages = c("data.table", "inline"),
                                .noexport = "weighted.colSums") %dopar% {
                                  
                                  # remake the weighted.colSums function...
@@ -1290,25 +1325,30 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                    signature(data="numeric", weights="numeric"), src, plugin="Rcpp")
                                  
                                  
-                                 if(is.numeric(run_number)){rn <- run_number}
-                                 else{rn<- i}
-                                 
-                                 # get the distance
-                                 dist <- loop_func(x, phenotypes, parms[i,"pi"], parms[i,"df"], parms[i,"scale"], method, ABC_scheme, rn)
-                                 dist <- matrix(c(parms[i,], dist = dist), nrow = 1)
-                                 colnames(dist) <- c(colnames(parms), "dist")
-                                 dist
+                                 out <- chunks[[i]]
+                                 out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = nrow(out)))
+
+                                 # run once per iter in this chunk
+                                 for(i in 1:nrow(out)){
+                                   if(is.numeric(run_number)){rn <- run_number}
+                                   else{rn <- i}
+                                   tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos)
+                                   out[i,"dist"] <- tout$dist
+                                   data.table::set(out.effects, j = i,  value = tout$e)
+                                 }
+                                 list(dists = out, effects = out.effects)
                                }
+    
     
     # release cores and clean up
     parallel::stopCluster(cl)
     doSNOW::registerDoSNOW()
     gc();gc()
-    
-    # bind
-    browser()
-    out <- dplyr::bind_rows(output)
+
+    # bind, relies on rvest::pluck to grab only the first or only the second part
+    out <- dplyr::bind_rows(rvest::pluck(output, 1))
+    out.effects <- dplyr::bind_cols(rvest::pluck(output, 2))
   }
 
-  return(out)
+  return(list(dists = out, effects = out.effects))
 }
