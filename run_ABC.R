@@ -145,7 +145,7 @@ sim.real.x <- list(e.eff = data.frame(site = 1:nrow(meta), effect = meta$effect)
                    phenotypes = phenos, meta = meta, x = x)
 ## pseudo
 pseudo.meta <- meta
-pseudo.meta$effect <- ABC_res$effects[[1]]
+pseudo.meta$effects <- ABC_res$effects[[1]]
 pseudo.phenos <- get.pheno.vals(x, pseudo.meta$effects, h)
 sim.psuedo.x <- list(e.eff = data.frame(site = 1:nrow(meta), effect = pseudo.meta$effect), h = h,
                      phenotypes = pseudo.phenos, meta = pseudo.meta, x = x)
