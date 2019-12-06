@@ -2,6 +2,7 @@ args <- commandArgs(TRUE)
 x <- as.character(args[1])
 #x <- "C:/Users/hemst/Documents/ss_file_access/theta4k_1000_10_rho40k.txt"
 outname <- as.character(args[2])
+ABC_iter <- as.character(args[3])
 
 # file and storage information:
 save.meta <- F # should we save the metadata file when doing prediction/GWAS
@@ -19,7 +20,7 @@ scale <- 1 # scale factor for the "bayesB" t-distribution
 
 # chain information
 chain_length <- 10000
-burnin <- 500
+burnin <- 1000
 thin <- 100
 
 # ABC params
@@ -132,7 +133,7 @@ rm(d); gc(); gc();
 # run
 ABC_res <- ABC_on_hyperparameters(x, phenos$p, iters = 1, pi_func = pi_func, 
                                   df_func = df_func, scale_func = scale_func, ABC_scheme = "C",
-                                  h = h, chain_length = chain_length, burnin = burnin, thin = thin, par = F)
+                                  h = h, chain_length = 1000, burnin = 100, thin = 10, par = F)
 
 # save
 write.table(ABC_res$dists, paste0("dists_", outname), sep = "\t", quote = F, col.names = F, row.names = F)
@@ -145,8 +146,8 @@ sim.real.x <- list(e.eff = data.frame(site = 1:nrow(meta), effect = meta$effect)
                    phenotypes = phenos, meta = meta, x = x)
 ## pseudo
 pseudo.meta <- meta
-pseudo.meta$effects <- ABC_res$effects[[1]]
-pseudo.phenos <- get.pheno.vals(x, pseudo.meta$effects, h)
+pseudo.meta$effect <- ABC_res$effects[[1]]
+pseudo.phenos <- get.pheno.vals(x, pseudo.meta$effect, h)
 sim.psuedo.x <- list(e.eff = data.frame(site = 1:nrow(meta), effect = pseudo.meta$effect), h = h,
                      phenotypes = pseudo.phenos, meta = pseudo.meta, x = x)
 
@@ -169,7 +170,7 @@ for(i in 1:n_runs){
                          chr.length = chrl,
                          print.all.freqs = F,
                          fgen.pheno = T)$run_vars
-  out.gs.real[[i]] <- cbind.data.frame(run = i, as.data.frame(out.gs.real[[i]]), source = "real", stringsAsFactors = F)
+  out.gs.real[[i]] <- cbind.data.frame(run = i, as.data.frame(out.gs.real[[i]]), source = "real", iter = ABC_iter, stringsAsFactors = F)
   
   # pseudo
   out.gs.pseudo[[i]]  <- gs(x = sim.psuedo.x,
@@ -184,7 +185,7 @@ for(i in 1:n_runs){
                           chr.length = chrl,
                           print.all.freqs = F,
                           fgen.pheno = T)$run_vars
-  out.gs.real[[i]] <- cbind.data.frame(as.data.frame(out.gs.pseudo[[i]]), run = i, source = "pseudo", stringsAsFactors = F)
+  out.gs.pseudo[[i]] <- cbind.data.frame(run = i, as.data.frame(out.gs.pseudo[[i]]), source = "pseudo", iter = ABC_iter, stringsAsFactors = F)
 }
 
 # bind
