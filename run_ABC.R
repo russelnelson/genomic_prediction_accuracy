@@ -133,11 +133,12 @@ rm(d); gc(); gc();
 # run
 ABC_res <- ABC_on_hyperparameters(x, phenos$p, iters = 1, pi_func = pi_func, 
                                   df_func = df_func, scale_func = scale_func, ABC_scheme = "C",
-                                  h = h, chain_length = 1000, burnin = 100, thin = 10, par = F)
+                                  h = h, chain_length = chain_length, burnin = burnin, thin = thin, par = F)
 
 # save
+ABC_res$dists$iter <- ABC_iter
 write.table(ABC_res$dists, paste0("dists_", outname), sep = "\t", quote = F, col.names = F, row.names = F)
-write.table(ABC_res$effects, paste0("effects_", outname), sep = "\t", quote = F, col.names = F, row.names = F)
+write.table(ABC_res$effects, paste0("effects_", ABC_iter, "_", outname), sep = "\t", quote = F, col.names = F, row.names = F)
 
 #====================run simulations====================
 # prep inputs

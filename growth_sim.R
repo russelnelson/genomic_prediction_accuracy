@@ -633,6 +633,7 @@ gs <- function(x,
   }
   
   #prepare stuff to return
+  out$gen <- 1:nrow(out)
 
   if(print.all.freqs){
     a.fqs <- cbind(meta, a.fqs, stringsAsFactors = F)
