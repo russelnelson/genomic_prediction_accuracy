@@ -479,13 +479,13 @@ gs <- function(x,
       "\n\tmean phenotypic value:", mean(pheno), "\n\taddative genetic variance:", var(a), "\n\tphenotypic variance:", var(pheno), "\n\th:", h, "\n")
   
   #make output matrix and get initial conditions
-  out <- matrix(NA, nrow = gens + 1, ncol = 7)
-  colnames(out) <- c("N", "mu_pheno", "mu_a", "opt", "diff", "var_a", "stochastic_opt")
+  out <- matrix(NA, nrow = gens + 1, ncol = 8)
+  colnames(out) <- c("N", "mu_pheno", "mu_a", "opt", "diff", "var_a", "stochastic_opt", "gen")
   N <- ncol(x)/2 #initial pop size
   h.av <- var(a) #get the historic addative genetic variance.
   h.pv <- var(pheno) #historic phenotypic variance.
 
-  out[1,] <- c(N, mean(pheno), mean(a), opt, 0, h.av, opt) #add this and the mean initial additive genetic variance
+  out[1,] <- c(N, mean(pheno), mean(a), opt, 0, h.av, opt, 1) #add this and the mean initial additive genetic variance
   if(plot_during_progress){
     library(ggplot2)
     pdat <- reshape2::melt(out)
@@ -633,7 +633,8 @@ gs <- function(x,
   }
   
   #prepare stuff to return
-  out$gen <- 1:nrow(out)
+  browser()
+  out[,"gen"] <- 1:nrow(out)
 
   if(print.all.freqs){
     a.fqs <- cbind(meta, a.fqs, stringsAsFactors = F)
