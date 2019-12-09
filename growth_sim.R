@@ -338,7 +338,8 @@ gs <- function(x,
                print.all.freqs = FALSE,
                adjust_phenotypes = FALSE,
                do.sexes = TRUE,
-               init = F){
+               init = F,
+               verbose = T){
   cat("Initializing...\n")
   #unpack x:
   if(pred.method == "effects"){ #unpack estimated effect sizes if provided.
@@ -598,15 +599,16 @@ gs <- function(x,
     out[i,5] <- opt - mean(a)
     out[i,6] <- var(a)
     out[i,7] <- t.opt
-    cat("gen:", i-1, 
-        "\tf_opt:", round(out[i-1,4],3),
-        "\ts_opt", round(out[i-1,7],3),
-        "\tmean(pheno):", round(out[i,2],3),  
-        "\tmean(a):", round(out[i,3],3),
-        "\tvar(a):", round(var(a),3),
-        "\tNs:", sum(s), 
-        "\tN(t+1):", out[i,1],"\n")
-    
+    if(verbose){
+      cat("gen:", i-1, 
+          "\tf_opt:", round(out[i-1,4],3),
+          "\ts_opt", round(out[i-1,7],3),
+          "\tmean(pheno):", round(out[i,2],3),  
+          "\tmean(a):", round(out[i,3],3),
+          "\tvar(a):", round(var(a),3),
+          "\tNs:", sum(s), 
+          "\tN(t+1):", out[i,1],"\n")
+    }
     if(plot_during_progress){
       pdat <- reshape2::melt(out)
       colnames(pdat) <- c("Generation", "var", "val")
@@ -633,7 +635,6 @@ gs <- function(x,
   }
   
   #prepare stuff to return
-  browser()
   out[,"gen"] <- 1:nrow(out)
 
   if(print.all.freqs){

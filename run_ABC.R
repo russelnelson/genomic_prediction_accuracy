@@ -170,7 +170,7 @@ for(i in 1:n_runs){
                          plot_during_progress = F,
                          chr.length = chrl,
                          print.all.freqs = F,
-                         fgen.pheno = T)$run_vars
+                         fgen.pheno = T, verbose = F)$run_vars
   out.gs.real[[i]] <- cbind.data.frame(run = i, as.data.frame(out.gs.real[[i]]), source = "real", iter = ABC_iter, stringsAsFactors = F)
   
   # pseudo
@@ -185,7 +185,7 @@ for(i in 1:n_runs){
                           plot_during_progress = F,
                           chr.length = chrl,
                           print.all.freqs = F,
-                          fgen.pheno = T)$run_vars
+                          fgen.pheno = T, verbose = F)$run_vars
   out.gs.pseudo[[i]] <- cbind.data.frame(run = i, as.data.frame(out.gs.pseudo[[i]]), source = "pseudo", iter = ABC_iter, stringsAsFactors = F)
 }
 
