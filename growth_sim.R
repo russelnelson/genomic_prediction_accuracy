@@ -340,7 +340,7 @@ gs <- function(x,
                do.sexes = TRUE,
                init = F,
                verbose = T){
-  cat("Initializing...\n")
+  if(verbose){cat("Initializing...\n")}
   #unpack x:
   if(pred.method == "effects"){ #unpack estimated effect sizes if provided.
     effect.sizes <- x$e.eff[,2]
@@ -417,13 +417,13 @@ gs <- function(x,
   ## If first gen phenos aren't provided (should be uncommon)
   if(length(fgen.pheno) != ncol(x)/2){
     if(pred.method == "effects"){
-      cat("Generating representative starting phenotypes from effect sizes.")
+      if(verbose){cat("Generating representative starting phenotypes from effect sizes.")}
       pheno <- get.pheno.vals(x, effect.sizes, h)
       a <- pheno$a # BVs
       pheno <- pheno$p # phenotypic values
     }
     else{
-      cat("Generating representative starting phenotypes from model.")
+      if(verbose){cat("Generating representative starting phenotypes from model.")}
       a <- pred.BV.from.model(pred.mod, x, pred.method, model)
       pheno <- a +  e.dist.func(a, var(a), h) #add environmental effects
       #working here
@@ -432,7 +432,7 @@ gs <- function(x,
   
   # otherwise use those, but still need to estimate BVs
   else{
-    cat("Using provided phenotypic values.")
+    if(verbose){cat("Using provided phenotypic values.")}
     pheno <- fgen.pheno #provded phenotypic values.
     
     a <- pred.BV.from.model(pred.model = pred.mod, g = x, pred.method = pred.method, 
@@ -473,11 +473,12 @@ gs <- function(x,
 
   #================print out initial conditions, intiallize final steps, and run===========
   #starting optimal phenotype, which is the starting mean addative genetic value.
-  #browser()
   opt <- mean(a) #optimum phenotype
   
-  cat("\n\n===============done===============\n\nStarting parms:\n\tstarting optimum phenotype:", opt, 
-      "\n\tmean phenotypic value:", mean(pheno), "\n\taddative genetic variance:", var(a), "\n\tphenotypic variance:", var(pheno), "\n\th:", h, "\n")
+  if(verbose){
+    cat("\n\n===============done===============\n\nStarting parms:\n\tstarting optimum phenotype:", opt, 
+        "\n\tmean phenotypic value:", mean(pheno), "\n\taddative genetic variance:", var(a), "\n\tphenotypic variance:", var(pheno), "\n\th:", h, "\n")
+  }
   
   #make output matrix and get initial conditions
   out <- matrix(NA, nrow = gens + 1, ncol = 8)
@@ -512,7 +513,9 @@ gs <- function(x,
   
   #================loop through each additional gen, doing selection, survival, and fisher sampling of survivors====
   
-  cat("\nBeginning run...\n\n================================\n\n")
+  if(verbose){
+    cat("\nBeginning run...\n\n================================\n\n")
+  }
 
   for(i in 2:(gens+1)){
     #=========survival====
