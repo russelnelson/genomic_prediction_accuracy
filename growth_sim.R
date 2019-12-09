@@ -524,19 +524,12 @@ gs <- function(x,
                 survival.function(pheno, t.opt, hist.var = h.pv)) # calling the function in this way ensures that individuals with phenotypes at the optimum have a survival probability of whatever is set in the function.
     #if the population has died out, stop.
     if(sum(s) <= 1){
-      if(print.all.freqs){
-        a.fqs <- cbind(meta, a.fqs[,1:(i-1)], stringsAsFactors = F)
-        out <- list(summary = out[1:(i-1),], frequencies = a.fqs)
-      }
-      else{
-        out <- out[1:(i-1),]
-      }
-      return(list(run_vars = out, x = x, phenos = pheno, BVs = a))
+      break
     }
     
     #what is the pop size after growth?
     out[i,1] <- round(growth.function(sum(s)))
-    
+
     #make a new x with the survivors
     x <- x[, .SD, .SDcols = which(rep(s, each = 2) == 1)] #get the gene copies of survivors
     
@@ -559,7 +552,7 @@ gs <- function(x,
     y <- rand.mating(x, out[i,1], meta, rec.dist, chr.length, do.sexes, facet)
     # check that the pop didn't die due to every individual being the same sex (rand.mating returns NULL in this case.)
     if(is.null(y)){
-      return(list(run_vars = out, x = x, phenos = pheno, BVs = a))
+      break
     }
     else{
       x <- y
@@ -636,6 +629,7 @@ gs <- function(x,
   
   #prepare stuff to return
   out[,"gen"] <- 1:nrow(out)
+  out <- out[-nrow(out),]
 
   if(print.all.freqs){
     a.fqs <- cbind(meta, a.fqs, stringsAsFactors = F)
