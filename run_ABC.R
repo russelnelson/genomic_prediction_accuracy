@@ -27,7 +27,7 @@ thin <- 100
 ## priors
 pi_func <- function(x) rbeta(x, 200, 1)
 df_func <- function(x) runif(x, 1, 100)
-scale_func <- function(x) runif(x, 1, 1)
+scale_func <- function(x) runif(x, 0, 100)
 
 #========================set simulation parameters====================
 # growth model information
@@ -46,7 +46,7 @@ sopt.slide.fixed <- .6 # by how much should the survival option slide each gen (
 var.theta <- 0.1 # how much environmental stochasticity is there?
 
 # simulation parameters
-max_gens <- 100 # maximum number of gens to do selection
+max_gens <- 500 # maximum number of gens to do selection
 n_runs <- 10 # number of times to run the selection operation
 
 #========================source scripts===============================
@@ -108,21 +108,6 @@ rec.dist <- function(x){
 
 
 #========================read in genomic data, assign effects, run ABC======
-
-# 
-# 
-# # read in data
-# x <- process_ms(x, chrl)
-# meta <- x$meta
-# x <- x$x
-# 
-# # assign effects
-# meta$effect <- rbayesB(nrow(meta), pi, d.f, scale)
-# cat("Mean effect size:", mean(meta$effect), "\n")
-# 
-# # assign phenotypes
-# phenos <- get.pheno.vals(x, meta$effect, .75)
-# saveRDS(list(x = x, meta = meta, phenos = phenos), "ABC/ABC_test_input_data.RDS")
 
 d <- readRDS(x)
 x <- d$x
