@@ -140,6 +140,49 @@ pred.BV.from.model <- function(pred.model, g, pred.method = NULL, model.source =
 }
 
 
+#' Draw parameter values from the posteriour distribution of an ABC using a density kernal
+#' @param x numeric, the number of values to draw.
+#' @param res data.frame, the results of an ABC run, must include a "dist" column.
+#' @param num_accepted numeric, either the proportion of runs to accept or the number of runs to accept.
+#' @param parameters character, the parameter names for which to draw values.
+gen_parms <- function(x, res, num_accepted, parameters, grid = 1000){
+  if(length(parameters) != 2){
+    stop("Only two parameters accepted at the moment.\n")
+  }
+  
+  # assign accepted runs
+  if(num_accepted < 1){
+    qcut <- num_accepted
+  }
+  else{
+    qcut <- num_accepted/nrow(res)
+  }
+  res$hits <- ifelse(res$dist <= quantile(res$dist, qcut), 1, 0)
+
+  # generate kernal
+  op <- GenKern::KernSur(res[res$hits == 1,which(colnames(res) == parameters[1])], 
+                         res[res$hits == 1,which(colnames(res) == parameters[2])],
+                         range.x = c(min(res[,which(colnames(res) == parameters[1])]),
+                                     max(res[,which(colnames(res) == parameters[1])])),
+                         range.y = c(min(res[,which(colnames(res) == parameters[2])]),
+                                     max(res[,which(colnames(res) == parameters[2])])),
+                         ygridsize = grid, xgridsize = grid)
+  
+  # sample from kernal and readjust to rows/columns
+  cells <- sample(1:length(op$zden), x, replace = T, prob = op$zden)
+  rows <- cells %% ncol(op$zden)
+  cols <- floor(cells/nrow(op$zden)) + 1
+  if(any(rows == 0)){
+    cols[rows == 0] <- cols[rows == 0] - 1
+    rows[rows == 0] <- nrow(op$zden)
+  }
+  
+  # grab parameter values and return
+  vals <- data.frame(p1 = op$xords[rows], p2 = op$yords[cols])
+  colnames(vals) <- parameters
+  return(vals)
+}
+
 #=======distribution functions=========
 #' Get random draws from the distribution used for bayesB regressions.
 #'
@@ -1154,7 +1197,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                    julia.path = "julia", chain_length = 100000, 
                                    burnin = 5000,
                                    thin = 100, method = "BayesB", ABC_scheme = "A", 
-                                   par = F, run_number = NULL, est_h = F){
+                                   par = F, run_number = NULL, est_h = F, save_effects = T,
+                                   joint_res = NULL, joint_acceptance = NULL){
 
   
   # ks <- which(matrixStats::rowSums2(x)/ncol(x) >= 0.05)
@@ -1232,18 +1276,57 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   
   #============ABC loop======================================
   # get the random values to run
-  run_pis <- pi_func(iters)
+  joint_params <- character()
   if(!is.null(df_func)){
-    run_dfs <- df_func(iters)
+    if(!is.function(df_func)){
+      if(df_func == "joint"){
+        joint_params <- "df"
+      } 
+      else{
+        stop("df func is neither a function or 'joint'.\n")
+      }
+    }
+    else{
+      run_dfs <- df_func(iters)
+    }
   }
   else{
     run_dfs <- rep(NA, iters)
   }
   if(!is.null(scale_func)){
-    run_scales <- scale_func(iters)
+    if(!is.function(scale_func)){
+      if(scale_func == "joint"){
+        joint_params <- c(joint_params, "scale")
+      } 
+      else{
+        stop("scale func is neither a function or 'joint'.\n")
+      }
+    }
+    else{
+      run_scales <- scale_func(iters)
+    }
   }
   else{
     run_scales <- rep(NA, iters)
+  }
+  if(!is.function(pi_func)){
+    if(pi_func == "joint"){
+      joint_params <- c(joint_params, "pi")
+    } 
+    else{
+      stop("pi func is neither a function or 'joint'.\n")
+    }
+  }
+  else{
+    run_pis <- pi_func(iters)
+  }
+  # if any joint parameter priors, calculate and disambiguate
+  if(length(joint_params) > 0){
+    joint_params <- gen_parms(iters, joint_res, joint_acceptance, joint_params)
+    colnames(joint_params) <- paste0("run_", colnames(joint_params), "s")
+    for(i in 1:ncol(joint_params)){
+      assign(colnames(joint_params)[i], joint_params[,i])
+    }
   }
   
   
@@ -1279,7 +1362,9 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   if(par == F){
 
     # initialize effects storage
-    out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = iters))
+    if(save_effects){
+      out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = iters))
+    }
     
     for(i in 1:iters){
       cat("Iter: ", i, ".\n")
@@ -1287,7 +1372,9 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
       else{rn <- i}
       tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff)
       out[i,"dist"] <- tout$dist
-      data.table::set(out.effects, j = i,  value = tout$e)
+      if(save_effects){
+        data.table::set(out.effects, j = i,  value = tout$e)
+      }
     }
   }
   # parallel
@@ -1297,12 +1384,11 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     doSNOW::registerDoSNOW(cl)
     
     # divide up into ncore chunks
-    chunks <- split(as.data.frame(out), sample(1:par, nrow(out), replace=T))
-    
+    chunks <- split(as.data.frame(out), (1:nrow(out))%%par)
+
     # prepare reporting function
     progress <- function(n) cat(sprintf("Chunk %d out of", n), par, "is complete.\n")
     opts <- list(progress=progress)
-    
     
     output <- foreach::foreach(i = 1:par, .inorder = FALSE,
                                .options.snow = opts, 
@@ -1326,17 +1412,24 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                  
                                  
                                  out <- chunks[[i]]
-                                 out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = nrow(out)))
+                                 if(save_effects){
+                                   out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = nrow(out)))
+                                 }
 
                                  # run once per iter in this chunk
-                                 for(i in 1:nrow(out)){
+                                 for(j in 1:nrow(out)){
                                    if(is.numeric(run_number)){rn <- run_number}
-                                   else{rn <- i}
-                                   tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos)
-                                   out[i,"dist"] <- tout$dist
-                                   data.table::set(out.effects, j = i,  value = tout$e)
+                                   else{rn <- j}
+                                   tout <- loop_func(x, phenotypes, out[j,"pi"], out[j,"df"], out[j,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos)
+                                   out[j,"dist"] <- tout$dist
+                                   if(save_effects){
+                                     data.table::set(out.effects, j = j,  value = tout$e)
+                                   }
                                  }
-                                 list(dists = out, effects = out.effects)
+                                 if(save_effects){
+                                   out <- list(dists = out, effects = out.effects)
+                                 }
+                                 out
                                }
     
     
@@ -1346,15 +1439,25 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     gc();gc()
 
     # bind, relies on rvest::pluck to grab only the first or only the second part
-    out <- dplyr::bind_rows(rvest::pluck(output, 1))
-    out.effects <- dplyr::bind_cols(rvest::pluck(output, 2))
+    if(save_effects){
+      out <- dplyr::bind_rows(rvest::pluck(output, 1))
+      out.effects <- dplyr::bind_cols(rvest::pluck(output, 2))
+    }
+    else{
+      out <- dplyr::bind_rows(output)
+    }
   }
-
-  return(list(dists = out, effects = out.effects))
+  
+  if(save_effects){
+    return(list(dists = out, effects = out.effects))
+  }
+  else{
+    return(list(dists = out))
+  }
 }
 
 plot_sim_res <- function(dists, sims, acceptance_ratio = 0.01, viridis.option = "B", 
-                         real.sims = FALSE, real.alpha = 0.06, smooth = F, log_dist = T){
+                         real.sims = FALSE, real.alpha = 0.06, smooth = T, log_dist = T){
   # note accepted runs
   res$hits <- 0
   res$hits <- ifelse(res$dist <= quantile(res$dist, acceptance_ratio), 1, 0)
