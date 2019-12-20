@@ -118,7 +118,7 @@ meta <- d$meta
 phenos <- d$phenos
 rm(d); gc(); gc();
 
-ABC_res <- readRDS("ABC_scheme_D_dual_opt_res_pi.999_scale_1.RDS")
+ABC_res <- readRDS(y)
 ABC_res <- ABC_on_hyperparameters(x, phenos$p, iters = 1, pi_func = "joint", 
                                   df_func = df_func, scale_func = "joint", ABC_scheme = "C",
                                   h = h, chain_length = chain_length, burnin = burnin, thin = thin, 
