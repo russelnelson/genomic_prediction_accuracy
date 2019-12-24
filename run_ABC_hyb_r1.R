@@ -1,10 +1,6 @@
 x <- "ABC/pi_.9999_df_5_scale_1_h.75/ABC_test_pi.9999_df_5_scale_1_h_.75.RDS"
 output <- "ABC/pi_.9999_df_5_scale_1_h.75/ABC_scheme_D_dual_opt_res_pi.9999_scale_1.RDS"
 
-
-# genome information
-chrl <- 10000000 # chromosome length CURRENTLY MUST BE THE SAME ACROSS ALL CHRs
-
 # ABC params
 ## priors
 pi_func <- function(x) rbeta(x, 200, 1)
