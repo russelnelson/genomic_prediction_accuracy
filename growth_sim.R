@@ -1204,11 +1204,21 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   # ks <- which(matrixStats::rowSums2(x)/ncol(x) >= 0.05)
   #============general subfunctions=========================
   euclid.dist <- function(p, o){
-    dist <- sqrt((o - p)^2)
+    dist <- sqrt(sum((o - p)^2))
     return(dist)
   }
   euclid.distribution.dist <- function(p, o){
-    dist <- ks.test(p, o)$statistic
+    do <- sort(o/sum(o))
+    dp <- sort(p/sum(p))
+    if(sum(dp) == 0){
+      return(c(dist, rep(NA, 51)))
+    }
+    dist <- c(dist = ks.test(p, o)$statistic, norm.dist = tryCatch(ks.test(dp, do)$statistic, error=function(err) NA))
+    kd <- sqrt((e1071::kurtosis(o) - e1071::kurtosis(p))^2)
+    scd <- sqrt((e1071::skewness(o) - e1071::skewness(p))^2)
+    kld <- tryCatch(LaplacesDemon::KLD(do, dp)$mean.sum.KLD, error=function(err) NA)
+    suppressMessages(dd <- philentropy::dist.diversity(rbind(do, dp), 1))
+    dist <- c(dist, kurtosis = kd, skewness = scd, KLD = kld, dd)
     return(dist)
   }
   generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL){
@@ -1331,8 +1341,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   
   
   # initialize storage
-  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, dist = 0)
-  
+  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 51))
+
   # if doing a method where prediction needs to be run on the real data ONCE, or if h should be estimated, do that now:
   if(ABC_scheme == "C" | est_h == T){
     cat("Beginning real data", method, "run.\n")
@@ -1360,7 +1370,6 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   # run the ABC
   ## serial
   if(par == F){
-
     # initialize effects storage
     if(save_effects){
       out.effects <- data.table::as.data.table(matrix(NA, nrow = nrow(x), ncol = iters))
@@ -1371,12 +1380,15 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
       if(is.numeric(run_number)){rn <- run_number}
       else{rn <- i}
       tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff)
-      out[i,"dist"] <- tout$dist
+      out[i, 4:ncol(out)] <- tout$dist
       if(save_effects){
         data.table::set(out.effects, j = i,  value = tout$e)
       }
     }
+    colnames(out)[4:ncol(out)] <- names(tout$dist)
   }
+  
+  
   # parallel
   else{
     parms <- out[,-ncol(out)]
@@ -1421,11 +1433,12 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                    if(is.numeric(run_number)){rn <- run_number}
                                    else{rn <- j}
                                    tout <- loop_func(x, phenotypes, out[j,"pi"], out[j,"df"], out[j,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos)
-                                   out[j,"dist"] <- tout$dist
+                                   out[j, 4:ncol(out)] <- tout$dist
                                    if(save_effects){
                                      data.table::set(out.effects, j = j,  value = tout$e)
                                    }
                                  }
+                                 colnames(out)[4:ncol(out)] <- names(tout$dist)
                                  if(save_effects){
                                    out <- list(dists = out, effects = out.effects)
                                  }
@@ -1459,8 +1472,11 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
 plot_sim_res <- function(dists, sims, acceptance_ratio = 0.01, viridis.option = "B", 
                          real.sims = FALSE, real.alpha = 0.06, smooth = T, log_dist = T){
   # note accepted runs
-  res$hits <- 0
-  res$hits <- ifelse(res$dist <= quantile(res$dist, acceptance_ratio), 1, 0)
+  dists$hits <- 0
+  if(acceptance_ratio > 1){
+    acceptance_ratio <- acceptance_ratio/nrow(dists)
+  }
+  dists$hits <- ifelse(dists$dist <= quantile(dists$dist, acceptance_ratio), 1, 0)
   
   # prepare data
   ## real data if provided
@@ -1471,8 +1487,8 @@ plot_sim_res <- function(dists, sims, acceptance_ratio = 0.01, viridis.option = 
   
   ## sim data
   sims <- na.omit(sims)
-  sims$dist <- res$dist[match(sims$iter, res$iter)]
-  bh.sims <- sims[which(sims$iter %in% res$iter[res$hits == 1]),]
+  sims$dist <- dists$dist[match(sims$iter, dists$iter)]
+  bh.sims <- sims[which(sims$iter %in% dists$iter[dists$hits == 1]),]
   bh.sims$rID <- paste0(bh.sims$iter, "_", bh.sims$run)
   
   # plot
