@@ -1250,7 +1250,6 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     }
 
     # run null model
-    browser()
     mod <- GMMAT::glmmkin(fixed = "phenotypes ~ 1",
                           data = data.frame(phenotypes = phenotypes, sampleID = rownames(ind.genos)),
                           kins = G,
@@ -1380,7 +1379,6 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     return(list(dist = dist, e = pseudo$e))
   }
   scheme_E <- function(x, phenotypes, real_pi_dist, pi, df, scale, method, t_iter, G){
-    browser()
     pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
     
     pseudo_pi <- pred(x, phenotypes = pseudo$p, 
