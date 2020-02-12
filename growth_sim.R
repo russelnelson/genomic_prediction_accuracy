@@ -145,7 +145,7 @@ pred.BV.from.model <- function(pred.model, g, pred.method = NULL, model.source =
 #' @param res data.frame, the results of an ABC run, must include a "dist" column.
 #' @param num_accepted numeric, either the proportion of runs to accept or the number of runs to accept.
 #' @param parameters character, the parameter names for which to draw values.
-gen_parms <- function(x, res, num_accepted, parameters, grid = 1000){
+gen_parms <- function(x, res, num_accepted, parameters, grid = 1000, dist.var = "ks.D"){
   if(length(parameters) != 2){
     stop("Only two parameters accepted at the moment.\n")
   }
@@ -157,7 +157,8 @@ gen_parms <- function(x, res, num_accepted, parameters, grid = 1000){
   else{
     qcut <- num_accepted/nrow(res)
   }
-  res$hits <- ifelse(res$dist <= quantile(res$dist, qcut), 1, 0)
+  
+  res$hits <- ifelse(res[,dist.var] <= quantile(res[,dist.var], qcut), 1, 0)
 
   # generate kernal
   op <- GenKern::KernSur(res[res$hits == 1,which(colnames(res) == parameters[1])], 
@@ -1316,7 +1317,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                    burnin = 5000,
                                    thin = 100, method = "BayesB", ABC_scheme = "A", 
                                    par = F, run_number = NULL, est_h = F, save_effects = T,
-                                   joint_res = NULL, joint_acceptance = NULL){
+                                   joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks.D"){
 
   
   # ks <- which(matrixStats::rowSums2(x)/ncol(x) >= 0.05)
@@ -1458,7 +1459,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   }
   # if any joint parameter priors, calculate and disambiguate
   if(length(joint_params) > 0){
-    joint_params <- gen_parms(iters, joint_res, joint_acceptance, joint_params)
+    joint_params <- gen_parms(iters, joint_res, joint_acceptance, joint_params, dist.var = joint_res_dist)
     colnames(joint_params) <- paste0("run_", colnames(joint_params), "s")
     for(i in 1:ncol(joint_params)){
       assign(colnames(joint_params)[i], joint_params[,i])
