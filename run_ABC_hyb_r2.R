@@ -120,9 +120,9 @@ rm(d); gc(); gc();
 
 ABC_res <- readRDS(y)
 ABC_res <- ABC_on_hyperparameters(x, phenos$p, iters = 1, pi_func = "joint", 
-                                  df_func = df_func, scale_func = "joint", ABC_scheme = "C",
+                                  df_func = df_func, scale_func = "joint", ABC_scheme = "E",
                                   h = h, chain_length = chain_length, burnin = burnin, thin = thin, 
-                                  save_effects = T, joint_res = ABC_res, joint_acceptance = 50)
+                                  save_effects = T, joint_res = ABC_res, joint_acceptance = 50, joint_res_dist = "dist")
 
 
 # save
