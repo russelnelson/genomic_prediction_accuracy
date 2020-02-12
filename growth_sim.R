@@ -183,6 +183,68 @@ gen_parms <- function(x, res, num_accepted, parameters, grid = 1000){
   return(vals)
 }
 
+
+
+calc_dist_stats <- function(o, p){
+  # descriptive for p
+  quantsp <- quantile(p, probs = seq(0.1, 0.9, length.out = 20))
+  names(quantsp) <- paste0("Quantile_", names(quantsp))
+  out_desc_p <- c(kurtosis = e1071::kurtosis(p),
+                skewness = e1071::skewness(p),
+                mean = mean(p), median = median(p), sd = sd(p), var = var(p), 
+                quantsp)
+  names(out_desc_p) <- paste0("sim_", names(out_desc_p))
+  
+  # descriptive for o
+  quantso <- quantile(o, probs = seq(0.1, 0.9, length.out = 20))
+  names(quantso) <- paste0("Quantile_", names(quantso))
+  out_desc_o <- c(kurtosis = e1071::kurtosis(o),
+                  skewness = e1071::skewness(o),
+                  mean = mean(o), median = median(o), sd = sd(o), var = var(o), 
+                  quantso)
+  names(out_desc_o) <- paste0("observed_", names(out_desc_o))
+  
+  
+  # comparative
+  suppressMessages(out_dist <- c(ks = unlist(ks.test(p, o)$statistic),
+                                 norm.ks = tryCatch(ks.test(p/sum(p), o/sum(o))$statistic, error=function(err) NA),
+                                 lepage = lepage.stat(p, o), cucconi = cucconi.stat(p, o)))
+  return(c(out_desc_o, out_desc_p, out_dist))
+}
+
+# from http://www2.univet.hu/users/jreiczig/locScaleTests/
+lepage.stat=function(x1,x2){
+  enne1=as.numeric(length(x1))
+  enne2=as.numeric(length(x2))
+  enne=enne1+enne2
+  e.w=enne1*(enne+1)/2
+  v.w=enne1*enne2*(enne+1)/12
+  e.a=enne1*(enne+2)/4
+  v.a=enne1*enne2*(enne+2)*(enne-2)/48/(enne-1)
+  w.o=as.numeric(wilcox.test(x1,x2,exact=FALSE)[1])+enne1*(enne1+1)/2
+  a.o=as.numeric(ansari.test(x1,x2,exact=FALSE,alternative="two.sided")[1])
+  wp.o=(w.o-e.w)^2/v.w
+  ap.o=(a.o-e.a)^2/v.a
+  return(wp.o+ap.o)
+}  
+cucconi.stat=function(x1,x2){
+  cuc=function(x1,x2){
+    vett=c(x1,x2)
+    enne1=as.numeric(length(x1))
+    enne2=as.numeric(length(x2))
+    enne=as.numeric(length(vett))
+    ranghi=rank(vett)
+    erre2=ranghi[(enne1+1):enne]
+    media=enne2*(enne+1)*(2*enne+1)
+    scarto=(enne1*enne2*(enne+1)*(2*enne+1)*(8*enne+11)/5)^0.5
+    u=(6*sum(erre2^2)-media)/scarto
+    v=(6*sum((enne+1-1*erre2)^2)-media)/scarto
+    ro=2*(enne^2-4)/(2*enne+1)/(8*enne+11)-1
+    cuc=(u^2+v^2-2*u*v*ro)/2/(1-ro^2)
+  }
+  return(.5*(cuc(x1,x2)+cuc(x2,x1)))
+}
+
 #=======distribution functions=========
 #' Get random draws from the distribution used for bayesB regressions.
 #'
@@ -855,10 +917,10 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                  mtry = 1,
                  h = NULL,
                  standardize = FALSE,
-                 save.meta = TRUE, par = NULL, pi = NULL, verbose = T){
+                 save.meta = TRUE, par = NULL, pi = NULL, pass_G = NULL, verbose = T){
   #============sanity checks================================
   # check that all of the required arguments are provided for the prediction.model we are running
-  if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger")){
+  if(prediction.program %in% c("JWAS", "BGLR", "PLINK", "TASSEL", "ranger", "GMMAT")){
     
     # JWAS checks
     if(prediction.program == "JWAS"){
@@ -1062,6 +1124,22 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     t.eff <- cbind(t.eff, t.x)
   }
   
+  else if(prediction.program == "GMMAT"){
+    ind.genos <- convert_2_to_1_column(x)
+    colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
+    rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
+    
+    if(is.null(pass_G)){
+      G <- AGHmatrix::Gmatrix(ind.genos, missingValue = NA, method = "Yang", maf = 0.05)
+      colnames(G) <- rownames(ind.genos)
+      rownames(G) <- rownames(ind.genos)
+    }
+    else{
+      G <- pass_G
+      rm(pass_G)
+    }
+  }
+  
   
   #=========run genomic prediction or GWAS and return results==========
   # for JWAS:
@@ -1155,8 +1233,48 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
                            mtry = mtry, num.trees = ntree, importance = "permutation", verbose = T, num.threads = par)
     }
     
+    setwd(owd)
     return(list(x = x, phenotypes = r.ind.effects, meta = meta, prediction.program = "ranger",
                 prediction.model = "RJ", output.model = list(model = rj), kept.snps = kept.snps))
+  }
+  
+  # for GMMAT
+  else if(prediction.program == "GMMAT"){
+
+    if(length(unique(phenotypes)) > 2){
+      family <- gaussian(link = "identity")
+    }
+    else if(length(unique(phenotypes)) == 2){
+      family <- binomial(link = "logit")
+    }
+
+    # run null model
+    browser()
+    mod <- GMMAT::glmmkin(fixed = "phenotypes ~ 1",
+                          data = data.frame(phenotypes = phenotypes, sampleID = rownames(ind.genos)),
+                          kins = G,
+                          id = "sampleID",
+                          family = family, method.optim = "Brent")
+
+    # run the test
+    ## prepare infile
+    asso_in <- as.data.table(t(ind.genos))
+    asso_in[, "snp_id" := colnames(ind.genos)]
+    setcolorder(asso_in, c("snp_id", colnames(asso_in)[1:nrow(ind.genos)]))
+    suppressMessages(data.table::fwrite(asso_in, "asso_in.txt", sep = "\t", col.names = T, row.names = F))
+    ## run
+    score.out <- GMMAT::glmm.score(obj = mod, 
+                                   infile = "asso_in.txt",
+                                   outfile = "asso_out_score.txt", 
+                                   infile.nrow.skip = 1, 
+                                   infile.ncol.skip = 1)
+    score.out <- read.table("asso_out_score.txt", header = T, stringsAsFactors = F)
+    ## clean
+    file.remove(c("asso_in.txt", "asso_out_score.txt"))
+
+    # return
+    return(list(x = x, e.eff = score.out, phenotypes = r.ind.effects, meta = meta, prediction.program = "GMMAT",
+                prediction.model = prediction.model, kept.snps = kept.snps))
   }
 }
 
@@ -1203,22 +1321,15 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   
   # ks <- which(matrixStats::rowSums2(x)/ncol(x) >= 0.05)
   #============general subfunctions=========================
-  euclid.dist <- function(p, o){
+  euclid.dist <- function(o, p){
     dist <- sqrt(sum((o - p)^2))
     return(dist)
   }
-  euclid.distribution.dist <- function(p, o){
-    do <- sort(o/sum(o))
-    dp <- sort(p/sum(p))
-    if(sum(dp) == 0){
-      return(c(dist, rep(NA, 51)))
+  euclid.distribution.dist <- function(o, p){
+    if(sum(p) == 0){
+      return(c(dist, rep(NA, 30)))
     }
-    dist <- c(dist = ks.test(p, o)$statistic, norm.dist = tryCatch(ks.test(dp, do)$statistic, error=function(err) NA))
-    kd <- sqrt((e1071::kurtosis(o) - e1071::kurtosis(p))^2)
-    scd <- sqrt((e1071::skewness(o) - e1071::skewness(p))^2)
-    kld <- tryCatch(LaplacesDemon::KLD(do, dp)$mean.sum.KLD, error=function(err) NA)
-    suppressMessages(dd <- philentropy::dist.diversity(rbind(do, dp), 1))
-    dist <- c(dist, kurtosis = kd, skewness = scd, KLD = kld, dd)
+    dist <- calc_dist_stats(o, p)
     return(dist)
   }
   generate_pseudo_effects <- function(x, pi, df, scale, method, h = NULL){
@@ -1235,7 +1346,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
               burnin = burnin, thin = thin, chain_length = chain_length,
               prediction.program = "JWAS", prediction.model = method, runID = t_iter, verbose = F)
     
-    dist <- euclid.dist(p$est.phenos, phenotypes)
+    dist <- euclid.dist(phenotypes, p$est.phenos)
     return(dist)
   }
   scheme_B <- function(x, phenotypes, pi, df, scale, method, t_iter){
@@ -1247,7 +1358,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     
     p.phenos <- as.vector(convert_2_to_1_column(p$x)%*%p$output.model$mod$ETA[[1]]$b)
     
-    dist <- euclid.distribution.dist(p.phenos, phenotypes)
+    dist <- euclid.distribution.dist(phenotypes, p.phenos)
     return(return(list(dist = dist, e = pseudo$e)))
   }
   scheme_C <- function(x, phenotypes, r.p.eff, pi, df, scale, method, t_iter){
@@ -1267,8 +1378,20 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     dist <- euclid.distribution.dist(phenotypes, pseudo$p)
     return(list(dist = dist, e = pseudo$e))
   }
+  scheme_E <- function(x, phenotypes, real_pi_dist, pi, df, scale, method, t_iter, G){
+    browser()
+    pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
+    
+    pseudo_pi <- pred(x, phenotypes = pseudo$p, 
+                      prediction.program = "GMMAT", 
+                      maf.filt = F, runID = paste0(t_iter, "gmmat_pseudo"),
+                      pass_G = G)$e.eff$PVAL
+    
+    dist <- euclid.distribution.dist(real_pi_dist, pseudo_pi)
+    return(list(dist = dist, e = pseudo$e))
+  }
   
-  loop_func <- function(x, phenotypes, pi, df, scale, method, scheme, t_iter, r.p.phenos = NULL, r.p.eff = NULL){
+  loop_func <- function(x, phenotypes, pi, df, scale, method, scheme, t_iter, r.p.phenos = NULL, r.p.eff = NULL, real_pi_dist = NULL, G = NULL){
     if(scheme == "A"){
       dist <- scheme_A(x, phenotypes, pi, method, t_iter)
     }
@@ -1280,6 +1403,9 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     }
     else if(scheme == "D"){
       dist <- scheme_D(x, phenotypes, pi, df, scale, method)
+    }
+    else if(scheme == "E"){
+      dist <- scheme_E(x, phenotypes, real_pi_dist, pi, df, scale, method, t_iter, G = G)
     }
     return(dist)
   }
@@ -1341,7 +1467,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   
   
   # initialize storage
-  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 51))
+  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 56))
 
   # if doing a method where prediction needs to be run on the real data ONCE, or if h should be estimated, do that now:
   if(ABC_scheme == "C" | est_h == T){
@@ -1366,6 +1492,25 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   else{
     r.p.phenos <- NULL
   }
+  
+  # can pass a g matrix forward and get comparison p-values once if doing scheme E.
+  if(ABC_scheme == "E"){
+    ind.genos <- convert_2_to_1_column(x)
+    colnames(ind.genos) <- paste0("m", 1:ncol(ind.genos)) # marker names
+    rownames(ind.genos) <- paste0("s", 1:nrow(ind.genos)) # ind IDS
+    
+    G <- AGHmatrix::Gmatrix(ind.genos, missingValue = NA, method = "Yang", maf = 0.05)
+    colnames(G) <- rownames(ind.genos)
+    rownames(G) <- rownames(ind.genos)
+    
+    real_pi_dist <- pred(x, phenotypes = phenotypes, prediction.program = "GMMAT", maf.filt = F, runID = "gmmat_real",
+                         pass_G = G)$e.eff$PVAL
+  }
+  else{
+    real_pi_dist <- NULL
+    G <- NULL
+  }
+  
 
   # run the ABC
   ## serial
@@ -1379,7 +1524,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
       cat("Iter: ", i, ".\n")
       if(is.numeric(run_number)){rn <- run_number}
       else{rn <- i}
-      tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff)
+      tout <- loop_func(x, phenotypes, out[i,"pi"], out[i,"df"], out[i,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff, real_pi_dist = real_pi_dist, G = G)
       out[i, 4:ncol(out)] <- tout$dist
       if(save_effects){
         data.table::set(out.effects, j = i,  value = tout$e)
@@ -1405,7 +1550,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
     output <- foreach::foreach(i = 1:par, .inorder = FALSE,
                                .options.snow = opts, 
                                .export = c("rbayesB", "get.pheno.vals", "e.dist.func", "pred", 
-                                           "convert_2_to_1_column"), .packages = c("data.table", "inline"),
+                                           "convert_2_to_1_column", "calc_dist_stats", 
+                                           "cucconi.stat", "lepage.stat"), .packages = c("data.table", "inline"),
                                .noexport = "weighted.colSums") %dopar% {
                                  
                                  # remake the weighted.colSums function...
@@ -1432,7 +1578,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                  for(j in 1:nrow(out)){
                                    if(is.numeric(run_number)){rn <- run_number}
                                    else{rn <- j}
-                                   tout <- loop_func(x, phenotypes, out[j,"pi"], out[j,"df"], out[j,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos)
+                                   tout <- loop_func(x, phenotypes, out[j,"pi"], out[j,"df"], out[j,"scale"], method, ABC_scheme, t_iter = rn, r.p.phenos = r.p.phenos, r.p.eff = r.p.eff, real_pi_dist = real_pi_dist, G = G)
                                    out[j, 4:ncol(out)] <- tout$dist
                                    if(save_effects){
                                      data.table::set(out.effects, j = j,  value = tout$e)
