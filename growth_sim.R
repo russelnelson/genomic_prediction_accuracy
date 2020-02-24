@@ -210,7 +210,8 @@ calc_dist_stats <- function(o, p){
   suppressMessages(out_dist <- c(ks = unlist(ks.test(p, o)$statistic),
                                  norm.ks = tryCatch(ks.test(p/sum(p), o/sum(o))$statistic, error=function(err) NA),
                                  lepage = lepage.stat(p, o), cucconi = cucconi.stat(p, o)))
-  return(c(out_desc_o, out_desc_p, out_dist))
+  
+  return(c(abs(out_desc_o - out_desc_p), out_dist))
 }
 
 # from http://www2.univet.hu/users/jreiczig/locScaleTests/
@@ -244,6 +245,122 @@ cucconi.stat=function(x1,x2){
     cuc=(u^2+v^2-2*u*v*ro)/2/(1-ro^2)
   }
   return(.5*(cuc(x1,x2)+cuc(x2,x1)))
+}
+
+findpeaks <- function(x, delta, pcut = .005, pvals = T){
+  peakdet <- function(v, delta, x = NULL){
+    # from: https://gist.github.com/dgromer/ea5929435b8b8c728193
+    maxtab <- NULL
+    mintab <- NULL
+    
+    if (is.null(x))
+    {
+      x <- seq_along(v)
+    }
+    
+    if (length(v) != length(x))
+    {
+      stop("Input vectors v and x must have the same length")
+    }
+    
+    if (!is.numeric(delta))
+    {
+      stop("Input argument delta must be numeric")
+    }
+    
+    if (delta <= 0)
+    {
+      stop("Input argument delta must be positive")
+    }
+    
+    mn <- Inf
+    mx <- -Inf
+    
+    mnpos <- NA
+    mxpos <- NA
+    
+    lookformax <- TRUE
+    
+    for(i in seq_along(v))
+    {
+      this <- v[i]
+      
+      if (this > mx)
+      {
+        mx <- this
+        mxpos <- x[i]
+      }
+      
+      if (this < mn)
+      {
+        mn <- this
+        mnpos <- x[i]
+      }
+      
+      if (lookformax)
+      {
+        if (this < mx - delta)
+        {
+          maxtab <- rbind(maxtab, data.frame(pos = mxpos, val = mx))
+          
+          mn <- this
+          mnpos <- x[i]
+          
+          lookformax <- FALSE
+        }
+      }
+      else
+      {
+        if (this > mn + delta)
+        {
+          mintab <- rbind(mintab, data.frame(pos = mnpos, val = mn))
+          
+          mx <- this
+          mxpos <- x[i]
+          
+          lookformax <- TRUE
+        }
+      }
+    }
+    
+    list(maxtab = maxtab, mintab = mintab)
+  }
+  
+  if(pvals){
+    lpcut <- -log10(pcut)
+    peaks <- x[x$logp >= lpcut,]
+    xs <- smooth(-log10(peaks$PVAL))
+    peaks$slogp <- as.numeric(xs)
+  }
+  else{
+    peaks <- x[x$effect >= pcut[1] | x$effect <= pcut[2],]
+    xs <- smooth(abs(peaks$effect))
+    peaks$seffect <- as.numeric(xs)
+  }
+  tpk <- peakdet(as.numeric(xs), delta = delta, x = peaks$position)
+  return(tpk$maxtab)
+}
+
+findpeaks_multi <- function(x, delta, pcut, chr = "chr", pvals = T){
+  ug <- unique(x[,chr])
+  lout <- vector("list", length(ug))
+  for(i in 1:length(lout)){
+    lout[[i]] <- as.data.table(findpeaks(x[x[,chr] == ug[i],], delta = delta, pcut = pcut, pvals = pvals))
+    if(nrow(lout[[i]] > 0)){
+      lout[[i]]$chr <- ug[i]
+    }
+  }
+  return(data.table::rbindlist(lout))
+}
+compare_peaks <- function(o, p){
+  npdiff <- abs(nrow(o) - nrow(p))
+  
+  diffs <- rep(NA, 31)
+  if(all(nrow(o) > 0 & nrow(p) > 0)){
+    diffs <- calc_dist_stats(o$val, p$val)
+  }
+  
+  return(c(npeak_diff = npdiff, diffs))
 }
 
 #=======distribution functions=========
@@ -1271,7 +1388,7 @@ pred <- function(x, meta = NULL, effect.sizes = NULL, phenotypes = NULL,
     score.out <- read.table("asso_out_score.txt", header = T, stringsAsFactors = F)
     ## clean
     file.remove(c("asso_in.txt", "asso_out_score.txt"))
-
+    
     # return
     return(list(x = x, e.eff = score.out, phenotypes = r.ind.effects, meta = meta, prediction.program = "GMMAT",
                 prediction.model = prediction.model, kept.snps = kept.snps))
@@ -1316,7 +1433,8 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                                    burnin = 5000,
                                    thin = 100, method = "BayesB", ABC_scheme = "A", 
                                    par = F, run_number = NULL, est_h = F, save_effects = T,
-                                   joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks.D"){
+                                   joint_res = NULL, joint_acceptance = NULL, joint_res_dist = "ks.D",
+                                   delta = .5, pcut = 0.0005){
 
   
   # ks <- which(matrixStats::rowSums2(x)/ncol(x) >= 0.05)
@@ -1370,8 +1488,22 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                        prediction.program = "BGLR", prediction.model = method,
                        runID = paste0(t_iter, "_pseudo"), verbose = F)
     
+    upper <- mean(pseudo.pred$output.model$mod$ETA[[1]]$b) + sd(pseudo.pred$output.model$mod$ETA[[1]]$b) * pcut
+    lower <- mean(pseudo.pred$output.model$mod$ETA[[1]]$b) - sd(pseudo.pred$output.model$mod$ETA[[1]]$b) * pcut
+    peaks.p <- findpeaks_multi(cbind(meta[pseudo.pred$kept.snps,], effect = pseudo.pred$output.model$mod$ETA[[1]]$b), delta, 
+                               pcut = c(lower, upper), "group", pvals = F)
+    
+    upper <- mean(r.p.eff) + sd(r.p.eff) * pcut
+    lower <- mean(r.p.eff) - sd(r.p.eff) * pcut
+    peaks.o <- findpeaks_multi(cbind(meta[pseudo.pred$kept.snps,], effect = r.p.eff), delta, pcut = c(upper, lower), "group", pvals = F)
+    
     dist <- euclid.distribution.dist(r.p.eff, pseudo.pred$output.model$mod$ETA[[1]]$b)
-    return(list(dist = dist, e = pseudo$e))
+    dist.peaks <- compare_peaks(peaks.o, peaks.p)
+    names(dist.peaks)[-1] <- paste0("peak_", names(dist.peaks)[-1])
+    
+    
+    return(list(dist = c(dist, dist.peaks), e = pseudo$e))
+    
   }
   scheme_D <- function(x, phenotypes, pi, df, scale, method){
     pseudo <- generate_pseudo_effects(x, pi, df, scale, method, h)
@@ -1386,8 +1518,14 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
                       maf.filt = F, runID = paste0(t_iter, "gmmat_pseudo"),
                       pass_G = G)$e.eff$PVAL
     
+    peaks.p <- findpeaks_multi(cbind(meta, PVAL = pseudo_pi, logp = -log10(pseudo_pi)), delta, pcut = pcut, "group")
+    peaks.o <- findpeaks_multi(cbind(meta, PVAL = real_pi_dist, logp = -log10(real_pi_dist)), delta, pcut = pcut, "group")
+    
     dist <- euclid.distribution.dist(real_pi_dist, pseudo_pi)
-    return(list(dist = dist, e = pseudo$e))
+    dist.peaks <- compare_peaks(peaks.o, peaks.p)
+    names(dist.peaks)[-1] <- paste0("peak_", names(dist.peaks)[-1])
+    
+    return(list(dist = c(dist, dist.peaks), e = pseudo$e))
   }
   
   loop_func <- function(x, phenotypes, pi, df, scale, method, scheme, t_iter, r.p.phenos = NULL, r.p.eff = NULL, real_pi_dist = NULL, G = NULL){
@@ -1466,7 +1604,7 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   
   
   # initialize storage
-  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 56))
+  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 61))
 
   # if doing a method where prediction needs to be run on the real data ONCE, or if h should be estimated, do that now:
   if(ABC_scheme == "C" | est_h == T){
