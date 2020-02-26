@@ -247,6 +247,7 @@ cucconi.stat=function(x1,x2){
   return(.5*(cuc(x1,x2)+cuc(x2,x1)))
 }
 
+# functions to find and compare peaks
 findpeaks <- function(x, delta, pcut = .005, pvals = T){
   peakdet <- function(v, delta, x = NULL){
     # from: https://gist.github.com/dgromer/ea5929435b8b8c728193
@@ -340,7 +341,6 @@ findpeaks <- function(x, delta, pcut = .005, pvals = T){
   tpk <- peakdet(as.numeric(xs), delta = delta, x = peaks$position)
   return(tpk$maxtab)
 }
-
 findpeaks_multi <- function(x, delta, pcut, chr = "chr", pvals = T){
   ug <- unique(x[,chr])
   lout <- vector("list", length(ug))
@@ -361,6 +361,35 @@ compare_peaks <- function(o, p){
   }
   
   return(c(npeak_diff = npdiff, diffs))
+}
+
+# function to estimate pi and scale from gmmat results via gam smoothing
+# The difference in the number of peaks
+# seems to relate only to pi, so do that first, then use the fit optimum pi to predict scale, since the two
+# are tightly linked. For the second pass, use only the runs with the best ks scores.
+estimate_pi_scale_from_ABC <- function(x){
+  
+  # pi gam
+  res$trans_pi <- log10(1 - res$pi)
+  g <- mgcv::gam(peak_count_diff ~ s(trans_pi, bs = "cs", k = 100), data = res)
+  
+  # pred pi gam
+  pd <- data.frame(pi = seq(min(res$pi), max(res$pi), by = .000001))
+  pd$trans_pi <- log10(1 - pd$pi)
+  pd$pred_pcd <- unlist(predict(g, newdata = pd))
+  opt.pi <- pd[which.min(pd$pred_pcd),]$pi
+  
+  
+  # scale gam
+  ores <- res
+  res <- res[res$ks <= quantile(res$ks, .01),]
+  g2 <- mgcv::gam(scale ~ s(trans_pi, bs = "cs"), data = res)
+  
+  # pred scale gam
+  pd2 <- data.frame(trans_pi = log10(1 - opt.pi))
+  opt.scale <- unlist(predict(g2, newdata = pd2))
+  
+  return(c(pi = opt.pi, scale = opt.scale))
 }
 
 #=======distribution functions=========
