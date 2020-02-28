@@ -145,7 +145,7 @@ pred.BV.from.model <- function(pred.model, g, pred.method = NULL, model.source =
 #' @param res data.frame, the results of an ABC run, must include a "dist" column.
 #' @param num_accepted numeric, either the proportion of runs to accept or the number of runs to accept.
 #' @param parameters character, the parameter names for which to draw values.
-gen_parms <- function(x, res, num_accepted, parameters, grid = 1000, dist.var = "ks.D"){
+gen_parms <- function(x, res, num_accepted, parameters, grid = 10000, dist.var = "ks.D"){
   if(length(parameters) != 2){
     stop("Only two parameters accepted at the moment.\n")
   }
@@ -207,15 +207,19 @@ calc_dist_stats <- function(o, p){
   
   
   # comparative
+  capture.output(invisible((lepage <- nonpar::lepage.test(p, o))))
+  capture.output(invisible(cucconi <- nonpar::cucconi.test(p, o, "permutation")))
   suppressMessages(out_dist <- c(ks = unlist(ks.test(p, o)$statistic),
                                  norm.ks = tryCatch(ks.test(p/sum(p), o/sum(o))$statistic, error=function(err) NA),
-                                 lepage = lepage.stat(p, o), cucconi = cucconi.stat(p, o)))
+                                 lepage.p = lepage$p.value, lepage.s = lepage$obs.stat,
+                                 cucconi.p = cucconi$p.value, cucconi.s = cucconi$C))
   
   return(c(abs(out_desc_o - out_desc_p), out_dist))
 }
 
 # from http://www2.univet.hu/users/jreiczig/locScaleTests/
 lepage.stat=function(x1,x2){
+  browser()
   enne1=as.numeric(length(x1))
   enne2=as.numeric(length(x2))
   enne=enne1+enne2
@@ -1633,7 +1637,12 @@ ABC_on_hyperparameters <- function(x, phenotypes, iters, pi_func = function(x) r
   
   
   # initialize storage
-  out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 61))
+  if(scheme %in% c("C", "E")){
+    out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 65))
+  }
+  else{
+    out <- cbind(pi = run_pis, df = run_dfs, scale = run_scales, matrix(0, length(run_pis), ncol = 32))
+  }
 
   # if doing a method where prediction needs to be run on the real data ONCE, or if h should be estimated, do that now:
   if(ABC_scheme == "C" | est_h == T){
