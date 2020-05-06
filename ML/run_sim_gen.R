@@ -21,7 +21,7 @@ res <- readRDS(y)
 sims <- sim_gen(x = x, meta = meta, iters = 1, chr = "group", center = T,
                 pi_func = "joint", df_func = df_func,
                 scale_func = "joint", h_func = h_func, joint_res = res,
-                par = F, joint_res_dist = "dist", joint_acceptance = .05)
+                par = F, joint_res_dist = "ks", joint_acceptance = .05)
 
 sims$stats$iter <- sim_iter
 write.table(sims$stats, paste0("stats_", outname), sep = "\t", quote = F, col.names = F, row.names = F)
