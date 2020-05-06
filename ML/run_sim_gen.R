@@ -3,6 +3,8 @@ library(GeneArchEst)
 # ABC params
 ## priors
 h_func <- function(x) rep(.75, x)
+df_func <- function(x) runif(x, 1, 100)
+
 
 args <- commandArgs(TRUE)
 x <- as.character(args[1])
@@ -10,13 +12,13 @@ y <- as.character(args[2])
 outname <- as.character(args[3])
 sim_iter <- as.character(args[4])
 
-x <- readRDS("../genomic_prediction_accuracy/ABC/pi_.999_df_5_scale_1_h.75/ABC_input_.999pi_.75h_5df_scale1.RDS")
+x <- readRDS(x)
 meta <- x$meta
 x <- x$x
 
-res <- readRDS("../genomic_prediction_accuracy/ABC/pi_.999_df_5_scale_1_h.75/ABC_scheme_D_dual_opt_res_pi.999_scale_1.RDS")
+res <- readRDS(y)
 
-sims <- sim_gen(x = x, meta = meta, iters = 1, chr = "group",
+sims <- sim_gen(x = x, meta = meta, iters = 1, chr = "group", center = T,
                 pi_func = "joint", df_func = df_func,
                 scale_func = "joint", h_func = h_func, joint_res = res,
                 par = F, joint_res_dist = "dist", joint_acceptance = .05)

@@ -5,9 +5,9 @@
 #SBATCH -J esd_sim_test
 
 
-infile=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/ABC/pi_.999_df_5_scale_1_h.75/ABC_input_.999pi_.75h_5df_scale1.RDS
-outname=ABC_.999pi_.75h_5df_scale1_scale_not_fixed_sim_gen
-scheme_D_res=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/ABC/pi_.999_df_5_scale_1_h.75/ABC_scheme_D_dual_opt_res_pi.999_scale_1.RDS
+infile=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/ABC/ABC_input_fixed_number_flat_100_sites_scale_1.RDS
+outname=fixed_number_flat_100_sites_scale_1_sim_gen
+scheme_D_res=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/ABC/fixed_flat_100sites_1scale/ABC_scheme_D_dual_opt_res_flat_scale1_sites100.RDS
 
 module load gcc/9.2.0
 
