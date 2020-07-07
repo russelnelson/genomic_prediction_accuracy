@@ -1,37 +1,32 @@
-x <- "ABC/ABC_input_.9999pi_.75h_5df_scale1_r2.RDS"
-output <- "ABC/pi_.9999_df_5_scale_1_h.75/ABC_scheme_D_dual_opt_res_pi.9999_scale_1_dist_trial_r2.RDS"
+x <- "../genomic_prediction_accuracy/ABC/ABC_input_scale_1_pi_9999_h_5_df_5.RDS"
+output <- "../genomic_prediction_accuracy/ABC/pi_9999_scale_1_h_5_df_5/ABC_scheme_D_.RDS"
 
 # ABC params
 ## priors
 pi_func <- function(x) rbeta(x, 200, 1)
 df_func <- function(x) runif(x, 1, 100)
 scale_func <- function(x) rbeta(x, 1, 3)*100
-h <- 0.75
+h <- function(x) rnorm(x, .5, .1)
 
 ## run params
 iters <- 100000
-scheme <- "D"
-par <- 6
-
-#========================source scripts===============================
-.libPaths(c(.libPaths(), "/home/hemstrow/R/x86_64-pc-linux-gnu-library/3.4", "/usr/local/lib/R/site-library", "/usr/lib/R/site-library", "/usr/lib/R/library", "/share/apps/rmodules"))
-library(methods); library(data.table); library(doParallel); library(dplyr); library(GenKern)
-
-source("~/coalescence/prediction_accuracy/genomic_prediction_accuracy/growth_sim.R")
+par <- 24
 
 #========================read in genomic data, assign effects, run ABC======
-
 d <- readRDS(x)
-x <- d$x
+x <- d[[3]]
 meta <- d$meta
 phenos <- d$phenos
 rm(d); gc(); gc();
 
+
 # run
-ABC_res <- ABC_on_hyperparameters(x, phenos$p, iters = iters, pi_func = pi_func, 
-                                  df_func = df_func, scale_func = scale_func, ABC_scheme = "D",
-                                  h = h, par = par, save_effects = F)
+ABC_res <- ABC_on_hyperparameters(x = x, phenotypes = phenos$p, iters = iters, 
+                                  effect_distribution = rbayesB, 
+                                  h_dist = h,
+                                  parameter_distributions = list(pi = pi_func, d.f = df_func, scale = scale_func), 
+                                  par = par, center = T)
 
 # save
-saveRDS(ABC_res$dists, output)
+saveRDS(ABC_res, output)
 
