@@ -6,6 +6,7 @@
 #SBATCH -n 24
 
 
+
 infile=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/ABC/ABC_input_scale_1_pi_9999_h_5_df_5.RDS
 outname=ABC_input_scale_1_pi_9999_h_5_df_5.RDS
 scheme_D_res=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/ABC/pi_9999_scale_1_h_5_df_5/ABC_scheme_D_.RDS

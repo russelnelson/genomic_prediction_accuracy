@@ -4,6 +4,7 @@ library(GeneArchEst)
 ## priors
 df_func <- function(x) runif(x, 1, 100)
 
+
 args <- commandArgs(TRUE)
 x <- as.character(args[1])
 y <- as.character(args[2])
