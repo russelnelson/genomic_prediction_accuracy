@@ -1,9 +1,9 @@
 #!/bin/bash -l
 #SBATCH -t 7-24:00:00
 #SBATCH -J sim_gen
-#SBATCH --mem=10G
+#SBATCH --mem=16G
 #SBATCH -t 4-24:00:00
-#SBATCH --array=1-100000
+#SBATCH --array=1-10000
 
 
 

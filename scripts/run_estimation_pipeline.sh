@@ -11,13 +11,13 @@ hsd=0.02
 j1=$(sbatch --parsable ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/scripts/run_ABC.sh $geno_pheno $outdir $data_type $hsd)
 
 # gen sim
-j2=$(sbatch --dependency=afterok:$j1 --parsable ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/scripts/run_gen_sim.sh $geno_pheno $outdir $data_type)
+j2=$(sbatch --dependency=afterok:$j1 --parsable ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/scripts/run_sim_gen.sh $geno_pheno $outdir $data_type)
 
 # rf
-j3=$(sbatch --dependency=afterok:$j2 --parsable ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/run_rf.sh $geno_pheno $outdir $data_type)
+j3=$(sbatch --dependency=afterok:$j2 --parsable ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/scripts/run_rf.sh $geno_pheno $outdir $data_type)
 
 # scale estimation
-sbatch  --dependency=afterok:$j3 ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/run_regression.sh $outdir
+sbatch  --dependency=afterok:$j3 ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/scripts/run_regression.sh $outdir
 
 
 
