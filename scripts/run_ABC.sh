@@ -1,10 +1,9 @@
 #!/bin/bash -l
-#SBATCH --mem=128G
-#SBATCH -t 4-24:00:00
+#SBATCH --mem=120G
+#SBATCH -t 6-24:00:00
 #SBATCH -J ABC_imp_small_hsd
 #SBATCH -n 24
 #SBATCH -p bigmemm
-
 
 module load gcc/9.2.0
 
