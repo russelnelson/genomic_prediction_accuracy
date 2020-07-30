@@ -1,5 +1,6 @@
 # read and prep the populus data
 ## read
+library(GeneArchEst)
 dat <- process_vcf("~/coalescence/prediction_accuracy/genomic_prediction_accuracy/data/populus_data/gatk_882_WG_genotypes_biallelic_snps_VQSR_non_filtered_bis.gt.vcf.gz")
 phenos <- data.table::fread("~/coalescence/prediction_accuracy/genomic_prediction_accuracy/data/populus_data/sorted_phenotypes.txt")
 meta <- dat$meta
