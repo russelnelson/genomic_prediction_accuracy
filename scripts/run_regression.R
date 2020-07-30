@@ -6,8 +6,11 @@ outname <- as.character(args[3])
 library(GeneArchEst)
 
 rf <- readRDS(rf)
+pi <- rf$pi$parameter_density$pi
+rm(rf)
+gc();gc()
 ABC <- readRDS(ABC)
 
-scale <- hyperparameter_regression_on_ABC(ABC$ABC_res, rf$pi$parameter_density$pi, acceptance_threshold = 0.0005)
+scale <- hyperparameter_regression_on_ABC(ABC$ABC_res, acceptance_threshold = 0.0005)
 
 saveRDS(scale, outname)

@@ -29,6 +29,7 @@ sims <- sim_gen(x = x, meta = meta, iters = iters, center = T, scheme = "gwas",
                 h_dist = function(x) rnorm(x, .5, .1), joint_res = res, joint_acceptance = 0.005, 
                 joint_res_dist = "ks")
 
+
 data.table::fwrite(sims$stats, outname, sep = "\t", quote = F, col.names = F, row.names = F)
 
 

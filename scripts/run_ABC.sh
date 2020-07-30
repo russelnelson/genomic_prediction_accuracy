@@ -11,5 +11,6 @@ geno_pheno=$1
 outdir=$2
 data_type=$3
 hsd=$4
+hmean=$5
 
-Rscript ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/scripts/run_ABC.R $geno_pheno ${outdir}/ABC_out.RDS $data_type $hsd
+Rscript ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/scripts/run_ABC.R $geno_pheno ${outdir}/ABC_out.RDS $data_type $hsd $hmean

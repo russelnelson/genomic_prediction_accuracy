@@ -12,6 +12,7 @@ x <- as.character(args[1])
 outname <- as.character(args[2])
 data_type <- as.character(args[3])
 hsd <- as.numeric(args[4])
+hmean <- as.numeric(args[5])
 
 # x <- "../genomic_prediction_accuracy/ABC/ABC_input_scale_1_pi_9999_h_5_df_5.RDS"
 # output <- "../genomic_prediction_accuracy/ABC/pi_9999_scale_1_h_5_df_5/ABC_scheme_D_.RDS"
@@ -21,7 +22,7 @@ hsd <- as.numeric(args[4])
 pi_func <- function(x) rbeta(x, 200, 1)
 df_func <- function(x) runif(x, 1, 100)
 scale_func <- function(x) rbeta(x, 1, 3)*100
-h <- function(x) rnorm(x, .5, hsd)
+h <- function(x) rnorm(x, hmean, hsd)
 
 ## run params
 iters <- 100000

@@ -3,7 +3,6 @@
 #SBATCH -t 4-24:00:00
 #SBATCH -J regression
 
-
 module load gcc/9.2.0
 
 outdir=$1
