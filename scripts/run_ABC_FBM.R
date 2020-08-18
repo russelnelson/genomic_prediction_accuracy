@@ -8,7 +8,7 @@
 library(GeneArchEst)
 
 args <- commandArgs(TRUE)
-x <- as.character(args[1])
+dat <- as.character(args[1])
 outname <- as.character(args[2])
 data_type <- as.character(args[3])
 hsd <- as.numeric(args[4])
@@ -25,12 +25,12 @@ scale_func <- function(x) rbeta(x, 1, 3)*100
 h <- function(x) rnorm(x, hmean, hsd)
 
 ## run params
-iters <- 100000
-par <- 24
+iters <- 1
+par <- F
 
 #========================read in genomic data, assign effects, run ABC======
-genofile <- paste0(x, ".rds")
-metafile <- paste0(x, ".geno.meta.RDS")
+genofile <- paste0(dat, ".rds")
+metafile <- paste0(dat, ".geno.meta.RDS")
 cat("Genotype RDS:", genofile, "\n")
 cat("Metadata and phenotype RDS: ", metafile, "\n")
 
@@ -41,12 +41,12 @@ meta <- meta$meta
 gc(); gc();
 
 # run
-ABC_res <- ABC_on_hyperparameters(x = x, phenotypes = phenos$p, iters = 2, 
+ABC_res <- ABC_on_hyperparameters(x = x, phenotypes = phenos$p, iters = iters, 
                                   effect_distribution = rbayesB, 
                                   h_dist = h,
                                   parameter_distributions = list(pi = pi_func, d.f = df_func, scale = scale_func), 
-                                  par = FALSE, center = T)
+                                  par = par, center = T)
 
 # save
-saveRDS(ABC_res, outname)
+write.table(ABC_res, outname, col.names = F, row.names = F, quote = F, sep = "\t")
 

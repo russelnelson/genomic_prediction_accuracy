@@ -11,6 +11,6 @@ rm(rf)
 gc();gc()
 ABC <- readRDS(ABC)
 
-scale <- hyperparameter_regression_on_ABC(ABC$ABC_res, acceptance_threshold = 0.0005)
+scale <- hyperparameter_regression_on_ABC(ABC$ABC_res, pi, acceptance_threshold = 0.0005)
 
 saveRDS(scale, outname)

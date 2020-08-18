@@ -28,6 +28,6 @@ genos <- bigstatsr::big_read(dat, select = keep.cols, skip = filemeta + 1, type 
 genos <- genos$save()
 
 #==================get and save metadata===============
-meta <- data.table::fread(dat, select = 1:2)
+meta <- data.table::fread(dat, select = 1:2, skip = filemeta + 1)
 colnames(meta) <- c("chr", "position")
-saveRDS(list(meta = meta, phenos = list(p = phenos)), paste0(file, ".meta.RDS"))
+saveRDS(list(meta = meta, phenos = list(p = phenos)), paste0(dat, ".meta.RDS"))

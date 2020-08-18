@@ -1,7 +1,8 @@
 #!/bin/bash -l
-#SBATCH --mem=20G
+#SBATCH --mem=128G
 #SBATCH -t 4-24:00:00
 #SBATCH -J regression
+#SBATCH -p bigmemm
 
 module load gcc/9.2.0
 

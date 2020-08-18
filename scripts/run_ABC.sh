@@ -1,9 +1,8 @@
 #!/bin/bash -l
-#SBATCH --mem=120G
+#SBATCH --mem=40G
 #SBATCH -t 6-24:00:00
 #SBATCH -J ABC_imp_small_hsd
 #SBATCH -n 24
-#SBATCH -p bigmemm
 
 module load gcc/9.2.0
 
@@ -14,3 +13,4 @@ hsd=$4
 hmean=$5
 
 Rscript ~/coalescence/prediction_accuracy/genomic_prediction_accuracy/scripts/run_ABC.R $geno_pheno ${outdir}/ABC_out.RDS $data_type $hsd $hmean
+
