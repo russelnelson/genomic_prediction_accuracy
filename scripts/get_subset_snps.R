@@ -10,7 +10,7 @@ maf[too.big] <- 1 - maf[too.big]
 
 # get snps to keep
 good <- which(maf >= 0.05)
-sub_snps <- sort(sample(good, 50))
+sub_snps <- sort(sample(good, 1000000))
 
 # save
 write.table(sub_snps, "/home/hemstrow/coalescence/prediction_accuracy/genomic_prediction_accuracy/data/populus_data/subset_snps.txt", row.names = F, col.names = F, quote = F)
