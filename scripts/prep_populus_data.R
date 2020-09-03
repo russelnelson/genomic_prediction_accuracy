@@ -10,9 +10,10 @@ phenos <- data.table::fread(phenos)
 goods <- which(!is.na(phenos$`Stomatal density (SD)`))
 good.samps <- phenos$JGIname[goods]
 phenos <- phenos$`Stomatal density (SD)`[goods]
+write.table(data.frame(samples = good.samps), paste0(dat, ".keep.samples.txt"), col.names = F, row.names = F, quote = F, sep = "\t")
 
 #==================format, clean, and save genotypes as a FBM====================
-## find the cols to import
+# find the cols to import
 systype <- Sys.info()[1]
 if(systype == "Windows"){
   filemeta <- shell(paste("grep '##'", dat,  "| wc -l"), intern = T)
@@ -23,7 +24,8 @@ if(!exists("filemeta")) {
 filemeta <- as.numeric(filemeta)
 header <- unlist(data.table::fread(dat, skip = filemeta, nrows = 1, header = F))
 keep.cols <- which(header %in% good.samps)
-## read in
+
+# read in
 genos <- bigstatsr::big_read(dat, select = keep.cols, skip = filemeta + 1, type = "integer")
 genos <- genos$save()
 

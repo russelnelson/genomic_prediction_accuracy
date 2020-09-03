@@ -13,4 +13,4 @@ G <- AGHmatrix::Gmatrix(ind.genos, missingValue = ifelse(mig == 0, NA, mig), met
 colnames(G) <- rownames(ind.genos)
 rownames(G) <- rownames(ind.genos)
 
-data.table::fwrite(G, out, sep = "\t", colnames = F)
+write.table(G, out, sep = "\t", col.names = F, row.names = F, quote = F)

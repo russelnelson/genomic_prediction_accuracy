@@ -9,10 +9,9 @@ args <- commandArgs(TRUE)
 genofile <- as.character(args[1])
 ABCfile <- as.character(args[2])
 metafile <- as.character(args[3])
-phenofile <- as.character(args[4])
-windowfile <- as.character(args[5])
-gmmatfile <- as.character(args[6])
-grmfile <- as.character(args[7])
+windowfile <- as.character(args[4])
+gmmatfile <- as.character(args[5])
+grmfile <- as.character(args[6])
 hmean <- as.numeric(args[7])
 hsd <- as.numeric(args[8])
 outname <- as.character(args[9])
@@ -22,12 +21,11 @@ iters <- 1
 # read in the genotypes
 x <- bigstatsr::big_attach(genofile)
 
-# read in the phenotypes
-phenos <- readRDS(phenofile)
-phenos <- phenos$phenos
 
 # read in the ABC results
-res <- readRDS(ABCfile)$ABC_res
+res <- data.table::fread(ABCfile, header = F)
+colnames(res) <- c("pi", "d.f", "scale", "h", GeneArchEst::names_diff_stats)
+res <- as.data.frame(res)
 
 # read in the windows
 pass_windows <- readRDS(windowfile)
@@ -42,7 +40,6 @@ colnames(meta) <- c("chr", "position")
 
 # clean
 gc(); gc();
-
 
 
 # run
