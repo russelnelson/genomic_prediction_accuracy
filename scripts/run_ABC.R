@@ -49,5 +49,6 @@ ABC_res <- ABC_on_hyperparameters(x = x, phenotypes = phenos$p, iters = iters,
                                   par = par, center = T)
 
 # save
-saveRDS(ABC_res, outname)
+write.table(ABC_res$res, outname, col.names = F, row.names = F, quote = F, sep = "\t")
+
 

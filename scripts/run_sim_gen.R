@@ -7,7 +7,7 @@ df_func <- function(x) runif(x, 1, 100)
 
 args <- commandArgs(TRUE)
 x <- as.character(args[1])
-y <- as.character(args[2])
+ABCfile <- as.character(args[2])
 outname <- as.character(args[3])
 data_type <- as.character(args[4])
 
@@ -22,7 +22,9 @@ if(data_type == "full"){
   x <- x[[1]]
 }
 
-res <- readRDS(y)$ABC_res
+res <- data.table::fread(ABCfile, header = F)
+colnames(res) <- c("pi", "d.f", "scale", "h", GeneArchEst::names_diff_stats)
+res <- as.data.frame(res)
 
 sims <- sim_gen(x = x, meta = meta, iters = iters, center = T, scheme = "gwas", 
                 parameter_distributions = list(pi = "joint", scale = "joint", d.f = df_func), 
