@@ -6,13 +6,15 @@ outname <- as.character(args[3])
 library(GeneArchEst)
 
 rf <- readRDS(rf)
-pi <- rf$pi$parameter_density$pi
+nsites <- rf$sites$parameter_density$sites
 rm(rf)
 gc();gc()
 
 res <- data.table::fread(ABCfile, header = F)
-colnames(res) <- c("pi", "d.f", "scale", "h", GeneArchEst::names_diff_stats)
+colnames(res) <- c("sites", "d.f", "scale", "h", GeneArchEst::names_diff_stats)
 
-scale <- hyperparameter_regression_on_ABC(res, pi, acceptance_threshold = 0.0005)
+scale <- hyperparameter_regression_on_ABC(res, nsites, acceptance_threshold = 0.005, formula = scale ~ sites,
+                                          parameter_transforms = reasonable_transform(c("scale", "sites"))$forward,
+                                          parameter_back_transforms = reasonable_transform(c("scale", "sites"))$back)
 
 saveRDS(scale, outname)

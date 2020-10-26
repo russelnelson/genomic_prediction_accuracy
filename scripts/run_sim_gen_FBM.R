@@ -24,7 +24,7 @@ x <- bigstatsr::big_attach(genofile)
 
 # read in the ABC results
 res <- data.table::fread(ABCfile, header = F)
-colnames(res) <- c("pi", "d.f", "scale", "h", GeneArchEst::names_diff_stats)
+colnames(res) <- c("sites", "d.f", "scale", "h", GeneArchEst::names_diff_stats)
 res <- as.data.frame(res)
 
 # read in the windows
@@ -43,9 +43,10 @@ gc(); gc();
 
 
 # run
-sims <- sim_gen(x = x, meta = meta, iters = iters, center = T, scheme = "gwas", 
-                parameter_distributions = list(pi = "joint", scale = "joint", d.f = df_func), 
-                h_dist = function(x) rnorm(x, hmean, hsd), joint_res = res, joint_acceptance = 0.005, 
+sims <- sim_gen(x = x, meta = meta, iters = iters, center = T, scheme = "gwas", effect_distribution = rbayesB_fixed,
+                parameter_distributions = list(sites = "joint", scale = "joint", d.f = df_func), 
+                h_dist = function(x) rnorm(x, hmean, hsd), joint_res = res, joint_acceptance = 0.005,
+                peak_delta = .5, peak_pcut = 0.001,
                 joint_res_dist = "ks", pass_windows = pass_windows, pass_G = pass_G, GMMAT_infile = gmmatfile)
 
 

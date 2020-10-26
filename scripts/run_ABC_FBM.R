@@ -10,16 +10,16 @@ library(GeneArchEst)
 args <- commandArgs(TRUE)
 dat <- as.character(args[1])
 outname <- as.character(args[2])
-data_type <- as.character(args[3])
-hsd <- as.numeric(args[4])
-hmean <- as.numeric(args[5])
+hsd <- as.numeric(args[3])
+hmean <- as.numeric(args[4])
 
 # x <- "../genomic_prediction_accuracy/ABC/ABC_input_scale_1_pi_9999_h_5_df_5.RDS"
 # output <- "../genomic_prediction_accuracy/ABC/pi_9999_scale_1_h_5_df_5/ABC_scheme_D_.RDS"
 
 # ABC params
 ## priors
-pi_func <- function(x) rbeta(x, 20000, 1)
+#pi_func <- function(x) rbeta(x, 20000, 1)
+sites_func <- function(n) floor(rexp(n, rate = .0025))
 df_func <- function(x) runif(x, 1, 100)
 scale_func <- function(x) rbeta(x, 1, 3)*100
 h <- function(x) rnorm(x, hmean, hsd)
@@ -42,9 +42,9 @@ gc(); gc();
 
 # run
 ABC_res <- ABC_on_hyperparameters(x = x, phenotypes = phenos$p, iters = iters, 
-                                  effect_distribution = rbayesB, 
+                                  effect_distribution = rbayesB_fixed, 
                                   h_dist = h,
-                                  parameter_distributions = list(pi = pi_func, d.f = df_func, scale = scale_func), 
+                                  parameter_distributions = list(sites = sites_func, d.f = df_func, scale = scale_func), 
                                   par = par, center = T)
 
 # save
