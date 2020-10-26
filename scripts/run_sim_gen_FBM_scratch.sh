@@ -36,7 +36,6 @@ if [[ $? == 0 ]]; then
     cp ${geno_pheno}.subset.012.clean.transpose $dst
     cp ${geno_pheno}.subset.Gmat $dst
     cp ${geno_pheno}.subset.windows.RDS $dst
-    cp ${geno_pheno}.rds $dst
     cp ${geno_pheno}.bk $dst
     cp ${geno_pheno}.geno.meta.RDS $dst
 
