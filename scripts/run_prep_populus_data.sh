@@ -1,8 +1,7 @@
 #!/bin/bash -l
-#SBATCH --mem=200G
+#SBATCH --mem=20G
 #SBATCH -t 6-24:00:00
 #SBATCH -J prep_populus
-#SBATCH -p bigmemm
 
 data=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/data/populus_data/gatk_882_WG_genotypes_biallelic_snps_VQSR_non_filtered_bis.gt
 phenos=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/data/populus_data/gatk_882_WG_genotypes_biallelic_snps_VQSR_non_filtered_bis.gt.sorted_phenotypes.txt
