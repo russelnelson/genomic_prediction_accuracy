@@ -7,9 +7,9 @@ phenos <- as.character(args[2])
 
 # read in phenotypes, figure out which have data for our phenotype
 phenos <- data.table::fread(phenos)
-goods <- which(!is.na(phenos$`Petiole length (PL)`))
+goods <- which(!is.na(phenos$`Stomatal density (SD)`))
 good.samps <- phenos$JGIname[goods]
-phenos <- phenos$`Petiole length (PL)`[goods]
+phenos <- phenos$`Stomatal density (SD)`[goods]
 write.table(data.frame(samples = good.samps), paste0(dat, ".keep.samples.txt"), col.names = F, row.names = F, quote = F, sep = "\t")
 
 #==================format, clean, and save genotypes as a FBM====================

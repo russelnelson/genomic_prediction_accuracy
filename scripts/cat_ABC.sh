@@ -6,6 +6,6 @@
 outdir=$1
 # cat together the ABC res!
 
-cat ${outdir}/r*_ABC_out.txt > ${outdir}/ABC_res.txt
+cat ${outdir}/r*_ABC_out.txt >> ${outdir}/ABC_res.txt
 
 

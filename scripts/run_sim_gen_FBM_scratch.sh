@@ -3,7 +3,7 @@
 #SBATCH --output=sim_gen_%A_%a.out
 #SBATCH -J sim_gen
 #SBATCH --mem=20G
-#SBATCH --array=1-10
+#SBATCH --array=1-44
 
 
 

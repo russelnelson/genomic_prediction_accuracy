@@ -14,7 +14,7 @@ maf=$3
 outdir=$4
 datamash_path=$5
 
-vcftools --gzvcf ${data}.vcf.gz --out ${data}.subset --keep ${data}.geno.keep.samples.txt --maf 0.05 --thin 1000 --recode --recode-INFO-all
+vcftools --gzvcf ${data}.vcf.gz --out ${data}.subset --keep ${data}.geno.keep.samples.txt --maf $maf --thin $thin --recode --recode-INFO-all
 
 vcftools --vcf ${data}.subset.recode.vcf --out ${data}.subset --012
 
