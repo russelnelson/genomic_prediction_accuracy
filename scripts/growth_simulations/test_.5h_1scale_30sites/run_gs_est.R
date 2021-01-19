@@ -4,7 +4,7 @@ args <- commandArgs(TRUE)
 outfile <- as.character(args[1])
 hmean <- as.numeric(args[2])
 hsd <- as.numeric(args[3])
-joint_dist <- readRDS("../../../results/test_data/sites_30_scale_1_h_.5/hsd.05/regression.RDS")
+joint_dist <- readRDS("../../../results/test_data/sites_30_scale_1_h_.5/hsd.05/trial_1/regression.RDS")
 dat <- process_ms("../../../data/theta4k_1000_10_rho40k.txt", chr.length = 10000000, fix_overlaps = T)
 genotypes <- dat$x
 real.phenotypes <-  unlist(read.table("../../../data/test_data/bayesB_fixed_30_sites_h_.5_scale_1.gt.phenos.txt"))

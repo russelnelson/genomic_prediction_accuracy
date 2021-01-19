@@ -1,9 +1,9 @@
 #!/bin/bash -l
 #SBATCH -t 1:30:00
 #SBATCH --output=ABC_%A_%a.out
-#SBATCH --mem=20G
+#SBATCH --mem=8G
 #SBATCH -J ABC_FBM
-#SBATCH --array=1-15000
+#SBATCH --array=1-66
 
 
 module load gcc/9.2.0

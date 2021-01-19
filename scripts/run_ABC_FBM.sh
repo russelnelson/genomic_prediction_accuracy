@@ -2,7 +2,7 @@
 #SBATCH -t 1:30:00
 #SBATCH --mem=8G
 #SBATCH -J ABC_FBM
-#SBATCH --array=1-465
+#SBATCH --array=1-15000
 
 
 module load gcc/9.2.0

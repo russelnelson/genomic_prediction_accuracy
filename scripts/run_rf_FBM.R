@@ -38,7 +38,7 @@ phenos <- readRDS(phenofile)$phenos$p
 # run the forest
 pred <- hyperparameter_random_forest(x = NULL, meta = meta, phenos = phenos, num_trees = 100000,
                                     sims = sim_dat, num_threads = 24, hyperparameter_to_estimate = "sites",
-                                    peak_delta = .5, peak_pcut = 0.001, 
+                                    peak_delta = .5, peak_pcut = 0.001, importance = "none",
                                     pass_windows = pass_windows, pass_G = pass_G, GMMAT_infile = gmmatfile)
 
 saveRDS(pred, outname)

@@ -1,9 +1,9 @@
 #!/bin/bash -l
 
-geno_pheno=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/data/test_data/bayesB_fixed_30_sites_h_.5_scale_1_trial_2.gt
-outdir=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/results/test_data/sites_30_scale_1_h_.5/hsd.05/trial_2
+geno_pheno=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/data/populus_data/gatk_882_WG_genotypes_biallelic_snps_VQSR_non_filtered_bis.gt
+outdir=~/coalescence/prediction_accuracy/genomic_prediction_accuracy/results/populus/h_0.05_sd_rbayesb_fixed/petiole_length
 hsd=0.05
-hmean=.5
+hmean=.561
 sub_maf=.05
 sub_thin=500
 datamash_path=~/bin/datamash
