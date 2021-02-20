@@ -1,100 +1,100 @@
-est 1 500 0.12
-est 2 578 0.12
-est 3 466 0.12
-est 4 424 0.12
-est 5 348 0.12
-est 6 274 0.12
-est 7 242 0.12
-est 8 208 0.12
-est 9 178 0.12
-est 10 150 0.12
-est 11 114 0.12
-est 12 80 0.12
-est 13 66 0.12
-est 14 40 0.12
-est 15 36 0.12
-est 16 16 0.12
-est 17 12 0.12
-est 18 4 0.12
-est 19 NA 0.12
-est 20 NA 0.12
-est 21 NA 0.12
-est 22 NA 0.12
-est 23 NA 0.12
-est 24 NA 0.12
-est 25 NA 0.12
-est 26 NA 0.12
-est 27 NA 0.12
-est 28 NA 0.12
-est 29 NA 0.12
-est 30 NA 0.12
-est 31 NA 0.12
-est 32 NA 0.12
-est 33 NA 0.12
-est 34 NA 0.12
-est 35 NA 0.12
-est 36 NA 0.12
-est 37 NA 0.12
-est 38 NA 0.12
-est 39 NA 0.12
-est 40 NA 0.12
-est 41 NA 0.12
-est 42 NA 0.12
-est 43 NA 0.12
-est 44 NA 0.12
-est 45 NA 0.12
-est 46 NA 0.12
-est 47 NA 0.12
-est 48 NA 0.12
-est 49 NA 0.12
-est 50 NA 0.12
-est 51 NA 0.12
-est 52 NA 0.12
-est 53 NA 0.12
-est 54 NA 0.12
-est 55 NA 0.12
-est 56 NA 0.12
-est 57 NA 0.12
-est 58 NA 0.12
-est 59 NA 0.12
-est 60 NA 0.12
-est 61 NA 0.12
-est 62 NA 0.12
-est 63 NA 0.12
-est 64 NA 0.12
-est 65 NA 0.12
-est 66 NA 0.12
-est 67 NA 0.12
-est 68 NA 0.12
-est 69 NA 0.12
-est 70 NA 0.12
-est 71 NA 0.12
-est 72 NA 0.12
-est 73 NA 0.12
-est 74 NA 0.12
-est 75 NA 0.12
-est 76 NA 0.12
-est 77 NA 0.12
-est 78 NA 0.12
-est 79 NA 0.12
-est 80 NA 0.12
-est 81 NA 0.12
-est 82 NA 0.12
-est 83 NA 0.12
-est 84 NA 0.12
-est 85 NA 0.12
-est 86 NA 0.12
-est 87 NA 0.12
-est 88 NA 0.12
-est 89 NA 0.12
-est 90 NA 0.12
-est 91 NA 0.12
-est 92 NA 0.12
-est 93 NA 0.12
-est 94 NA 0.12
-est 95 NA 0.12
-est 96 NA 0.12
-est 97 NA 0.12
-est 98 NA 0.12
-est 99 NA 0.12
-est 100 NA 0.12
+est 1 500 0.142 8250
+est 2 500 0.142 8250
+est 3 376 0.142 8250
+est 4 248 0.142 8250
+est 5 190 0.142 8250
+est 6 164 0.142 8250
+est 7 128 0.142 8250
+est 8 88 0.142 8250
+est 9 42 0.142 8250
+est 10 24 0.142 8250
+est 11 16 0.142 8250
+est 12 8 0.142 8250
+est 13 6 0.142 8250
+est 14 NA 0.142 8250
+est 15 NA 0.142 8250
+est 16 NA 0.142 8250
+est 17 NA 0.142 8250
+est 18 NA 0.142 8250
+est 19 NA 0.142 8250
+est 20 NA 0.142 8250
+est 21 NA 0.142 8250
+est 22 NA 0.142 8250
+est 23 NA 0.142 8250
+est 24 NA 0.142 8250
+est 25 NA 0.142 8250
+est 26 NA 0.142 8250
+est 27 NA 0.142 8250
+est 28 NA 0.142 8250
+est 29 NA 0.142 8250
+est 30 NA 0.142 8250
+est 31 NA 0.142 8250
+est 32 NA 0.142 8250
+est 33 NA 0.142 8250
+est 34 NA 0.142 8250
+est 35 NA 0.142 8250
+est 36 NA 0.142 8250
+est 37 NA 0.142 8250
+est 38 NA 0.142 8250
+est 39 NA 0.142 8250
+est 40 NA 0.142 8250
+est 41 NA 0.142 8250
+est 42 NA 0.142 8250
+est 43 NA 0.142 8250
+est 44 NA 0.142 8250
+est 45 NA 0.142 8250
+est 46 NA 0.142 8250
+est 47 NA 0.142 8250
+est 48 NA 0.142 8250
+est 49 NA 0.142 8250
+est 50 NA 0.142 8250
+est 51 NA 0.142 8250
+est 52 NA 0.142 8250
+est 53 NA 0.142 8250
+est 54 NA 0.142 8250
+est 55 NA 0.142 8250
+est 56 NA 0.142 8250
+est 57 NA 0.142 8250
+est 58 NA 0.142 8250
+est 59 NA 0.142 8250
+est 60 NA 0.142 8250
+est 61 NA 0.142 8250
+est 62 NA 0.142 8250
+est 63 NA 0.142 8250
+est 64 NA 0.142 8250
+est 65 NA 0.142 8250
+est 66 NA 0.142 8250
+est 67 NA 0.142 8250
+est 68 NA 0.142 8250
+est 69 NA 0.142 8250
+est 70 NA 0.142 8250
+est 71 NA 0.142 8250
+est 72 NA 0.142 8250
+est 73 NA 0.142 8250
+est 74 NA 0.142 8250
+est 75 NA 0.142 8250
+est 76 NA 0.142 8250
+est 77 NA 0.142 8250
+est 78 NA 0.142 8250
+est 79 NA 0.142 8250
+est 80 NA 0.142 8250
+est 81 NA 0.142 8250
+est 82 NA 0.142 8250
+est 83 NA 0.142 8250
+est 84 NA 0.142 8250
+est 85 NA 0.142 8250
+est 86 NA 0.142 8250
+est 87 NA 0.142 8250
+est 88 NA 0.142 8250
+est 89 NA 0.142 8250
+est 90 NA 0.142 8250
+est 91 NA 0.142 8250
+est 92 NA 0.142 8250
+est 93 NA 0.142 8250
+est 94 NA 0.142 8250
+est 95 NA 0.142 8250
+est 96 NA 0.142 8250
+est 97 NA 0.142 8250
+est 98 NA 0.142 8250
+est 99 NA 0.142 8250
+est 100 NA 0.142 8250

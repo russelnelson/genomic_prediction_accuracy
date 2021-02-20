@@ -1,100 +1,100 @@
-est 1 500 0.03
-est 2 574 0.03
-est 3 642 0.03
-est 4 760 0.03
-est 5 904 0.03
-est 6 164 0.03
-est 7 190 0.03
-est 8 234 0.03
-est 9 286 0.03
-est 10 300 0.03
-est 11 284 0.03
-est 12 240 0.03
-est 13 182 0.03
-est 14 132 0.03
-est 15 54 0.03
-est 16 20 0.03
-est 17 6 0.03
-est 18 NA 0.03
-est 19 NA 0.03
-est 20 NA 0.03
-est 21 NA 0.03
-est 22 NA 0.03
-est 23 NA 0.03
-est 24 NA 0.03
-est 25 NA 0.03
-est 26 NA 0.03
-est 27 NA 0.03
-est 28 NA 0.03
-est 29 NA 0.03
-est 30 NA 0.03
-est 31 NA 0.03
-est 32 NA 0.03
-est 33 NA 0.03
-est 34 NA 0.03
-est 35 NA 0.03
-est 36 NA 0.03
-est 37 NA 0.03
-est 38 NA 0.03
-est 39 NA 0.03
-est 40 NA 0.03
-est 41 NA 0.03
-est 42 NA 0.03
-est 43 NA 0.03
-est 44 NA 0.03
-est 45 NA 0.03
-est 46 NA 0.03
-est 47 NA 0.03
-est 48 NA 0.03
-est 49 NA 0.03
-est 50 NA 0.03
-est 51 NA 0.03
-est 52 NA 0.03
-est 53 NA 0.03
-est 54 NA 0.03
-est 55 NA 0.03
-est 56 NA 0.03
-est 57 NA 0.03
-est 58 NA 0.03
-est 59 NA 0.03
-est 60 NA 0.03
-est 61 NA 0.03
-est 62 NA 0.03
-est 63 NA 0.03
-est 64 NA 0.03
-est 65 NA 0.03
-est 66 NA 0.03
-est 67 NA 0.03
-est 68 NA 0.03
-est 69 NA 0.03
-est 70 NA 0.03
-est 71 NA 0.03
-est 72 NA 0.03
-est 73 NA 0.03
-est 74 NA 0.03
-est 75 NA 0.03
-est 76 NA 0.03
-est 77 NA 0.03
-est 78 NA 0.03
-est 79 NA 0.03
-est 80 NA 0.03
-est 81 NA 0.03
-est 82 NA 0.03
-est 83 NA 0.03
-est 84 NA 0.03
-est 85 NA 0.03
-est 86 NA 0.03
-est 87 NA 0.03
-est 88 NA 0.03
-est 89 NA 0.03
-est 90 NA 0.03
-est 91 NA 0.03
-est 92 NA 0.03
-est 93 NA 0.03
-est 94 NA 0.03
-est 95 NA 0.03
-est 96 NA 0.03
-est 97 NA 0.03
-est 98 NA 0.03
-est 99 NA 0.03
-est 100 NA 0.03
+est 1 500 NA 5661
+est 2 500 NA 5661
+est 3 500 NA 5661
+est 4 500 NA 5661
+est 5 500 NA 5661
+est 6 500 NA 5661
+est 7 500 NA 5661
+est 8 500 NA 5661
+est 9 500 NA 5661
+est 10 500 NA 5661
+est 11 472 NA 5661
+est 12 464 NA 5661
+est 13 500 NA 5661
+est 14 500 NA 5661
+est 15 500 NA 5661
+est 16 500 NA 5661
+est 17 500 NA 5661
+est 18 500 NA 5661
+est 19 500 NA 5661
+est 20 500 NA 5661
+est 21 500 NA 5661
+est 22 500 NA 5661
+est 23 500 NA 5661
+est 24 500 NA 5661
+est 25 500 NA 5661
+est 26 500 NA 5661
+est 27 500 NA 5661
+est 28 500 NA 5661
+est 29 478 NA 5661
+est 30 500 NA 5661
+est 31 480 NA 5661
+est 32 448 NA 5661
+est 33 420 NA 5661
+est 34 390 NA 5661
+est 35 334 NA 5661
+est 36 226 NA 5661
+est 37 202 NA 5661
+est 38 200 NA 5661
+est 39 216 NA 5661
+est 40 158 NA 5661
+est 41 126 NA 5661
+est 42 98 NA 5661
+est 43 58 NA 5661
+est 44 36 NA 5661
+est 45 24 NA 5661
+est 46 16 NA 5661
+est 47 6 NA 5661
+est 48 NA NA 5661
+est 49 NA NA 5661
+est 50 NA NA 5661
+est 51 NA NA 5661
+est 52 NA NA 5661
+est 53 NA NA 5661
+est 54 NA NA 5661
+est 55 NA NA 5661
+est 56 NA NA 5661
+est 57 NA NA 5661
+est 58 NA NA 5661
+est 59 NA NA 5661
+est 60 NA NA 5661
+est 61 NA NA 5661
+est 62 NA NA 5661
+est 63 NA NA 5661
+est 64 NA NA 5661
+est 65 NA NA 5661
+est 66 NA NA 5661
+est 67 NA NA 5661
+est 68 NA NA 5661
+est 69 NA NA 5661
+est 70 NA NA 5661
+est 71 NA NA 5661
+est 72 NA NA 5661
+est 73 NA NA 5661
+est 74 NA NA 5661
+est 75 NA NA 5661
+est 76 NA NA 5661
+est 77 NA NA 5661
+est 78 NA NA 5661
+est 79 NA NA 5661
+est 80 NA NA 5661
+est 81 NA NA 5661
+est 82 NA NA 5661
+est 83 NA NA 5661
+est 84 NA NA 5661
+est 85 NA NA 5661
+est 86 NA NA 5661
+est 87 NA NA 5661
+est 88 NA NA 5661
+est 89 NA NA 5661
+est 90 NA NA 5661
+est 91 NA NA 5661
+est 92 NA NA 5661
+est 93 NA NA 5661
+est 94 NA NA 5661
+est 95 NA NA 5661
+est 96 NA NA 5661
+est 97 NA NA 5661
+est 98 NA NA 5661
+est 99 NA NA 5661
+est 100 NA NA 5661
